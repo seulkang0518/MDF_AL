@@ -428,11 +428,14 @@ def run_experiments(
     print_mean_history=False,
     adapt_stop_rel_tol=None,
     adapt_stop_patience=3,
+    save_lhs_rhs_histories=False,
 ):
     fixed_finals = []
     adapt_finals = []
     fixed_histories = []
     adapt_histories = []
+    adapt_lhs_histories = []
+    adapt_rhs_histories = []
     last_fixed_particles = None
     last_adapt_particles = None
     last_adapt_lhs = None
@@ -505,8 +508,8 @@ def run_experiments(
             (
                 adapt_particles,
                 adapt_final,
-                _last_seed_lhs,
-                _last_seed_rhs,
+                last_seed_lhs,
+                last_seed_rhs,
                 _last_seed_steps,
                 adapt_history,
             ) = run_flow_adaptive_with_lhs_rhs(
@@ -529,6 +532,13 @@ def run_experiments(
         adapt_finals.append(adapt_final)
         fixed_histories.append(fixed_history)
         adapt_histories.append(adapt_history[: history_steps.shape[0]])
+        if save_lhs_rhs_histories:
+            if seed == num_seeds - 1:
+                adapt_lhs_histories.append(last_adapt_lhs[: history_steps.shape[0]])
+                adapt_rhs_histories.append(last_adapt_rhs[: history_steps.shape[0]])
+            else:
+                adapt_lhs_histories.append(last_seed_lhs[: history_steps.shape[0]])
+                adapt_rhs_histories.append(last_seed_rhs[: history_steps.shape[0]])
         last_fixed_particles = fixed_particles
         last_adapt_particles = adapt_particles
 
@@ -551,14 +561,25 @@ def run_experiments(
         adapt_histories_padded[history_idx, : history.shape[0]] = history
     fixed_history_mean = np.nanmean(fixed_histories_padded, axis=0)
     adapt_history_mean = np.nanmean(adapt_histories_padded, axis=0)
+    fixed_history_std = np.nanstd(fixed_histories_padded, axis=0)
+    adapt_history_std = np.nanstd(adapt_histories_padded, axis=0)
+    fixed_history_count = np.sum(~np.isnan(fixed_histories_padded), axis=0)
+    adapt_history_count = np.sum(~np.isnan(adapt_histories_padded), axis=0)
+    fixed_history_se = fixed_history_std / np.sqrt(np.maximum(fixed_history_count, 1))
+    adapt_history_se = adapt_history_std / np.sqrt(np.maximum(adapt_history_count, 1))
 
-    return {
-        "fixed_finals": np.array(fixed_finals, dtype=np.float64),
-        "adapt_finals": np.array(adapt_finals, dtype=np.float64),
+    fixed_finals = np.array(fixed_finals, dtype=np.float64)
+    adapt_finals = np.array(adapt_finals, dtype=np.float64)
+
+    results = {
+        "fixed_finals": fixed_finals,
+        "adapt_finals": adapt_finals,
         "fixed_mean": float(np.mean(fixed_finals)),
         "fixed_std": float(np.std(fixed_finals)),
+        "fixed_se": float(np.std(fixed_finals) / np.sqrt(max(len(fixed_finals), 1))),
         "adapt_mean": float(np.mean(adapt_finals)),
         "adapt_std": float(np.std(adapt_finals)),
+        "adapt_se": float(np.std(adapt_finals) / np.sqrt(max(len(adapt_finals), 1))),
         "last_fixed_particles": last_fixed_particles,
         "last_adapt_particles": last_adapt_particles,
         "last_adapt_lhs": last_adapt_lhs,
@@ -567,9 +588,60 @@ def run_experiments(
         "history_steps": history_steps,
         "fixed_history_steps": history_steps[: fixed_history_mean.shape[0]],
         "adapt_history_steps": history_steps[: adapt_history_mean.shape[0]],
+        "fixed_histories": fixed_histories_padded,
+        "adapt_histories": adapt_histories_padded,
         "fixed_history_mean": fixed_history_mean,
         "adapt_history_mean": adapt_history_mean,
+        "fixed_history_std": fixed_history_std,
+        "adapt_history_std": adapt_history_std,
+        "fixed_history_se": fixed_history_se,
+        "adapt_history_se": adapt_history_se,
+        "fixed_history_count": fixed_history_count,
+        "adapt_history_count": adapt_history_count,
+        "save_lhs_rhs_histories": np.asarray(save_lhs_rhs_histories, dtype=np.bool_),
     }
+
+    if save_lhs_rhs_histories:
+        max_lhs_history_len = max(history.shape[0] for history in adapt_lhs_histories)
+        adapt_lhs_histories_padded = np.full(
+            (len(adapt_lhs_histories), max_lhs_history_len),
+            np.nan,
+            dtype=np.float64,
+        )
+        adapt_rhs_histories_padded = np.full(
+            (len(adapt_rhs_histories), max_lhs_history_len),
+            np.nan,
+            dtype=np.float64,
+        )
+        for history_idx, history in enumerate(adapt_lhs_histories):
+            adapt_lhs_histories_padded[history_idx, : history.shape[0]] = history
+        for history_idx, history in enumerate(adapt_rhs_histories):
+            adapt_rhs_histories_padded[history_idx, : history.shape[0]] = history
+
+        adapt_lhs_mean = np.nanmean(adapt_lhs_histories_padded, axis=0)
+        adapt_rhs_mean = np.nanmean(adapt_rhs_histories_padded, axis=0)
+        adapt_lhs_std = np.nanstd(adapt_lhs_histories_padded, axis=0)
+        adapt_rhs_std = np.nanstd(adapt_rhs_histories_padded, axis=0)
+        adapt_lhs_count = np.sum(~np.isnan(adapt_lhs_histories_padded), axis=0)
+        adapt_rhs_count = np.sum(~np.isnan(adapt_rhs_histories_padded), axis=0)
+
+        results.update(
+            {
+                "adapt_lhs_checkpoint_steps": history_steps[: adapt_lhs_mean.shape[0]],
+                "adapt_lhs_histories": adapt_lhs_histories_padded,
+                "adapt_rhs_histories": adapt_rhs_histories_padded,
+                "adapt_lhs_mean": adapt_lhs_mean,
+                "adapt_rhs_mean": adapt_rhs_mean,
+                "adapt_lhs_std": adapt_lhs_std,
+                "adapt_rhs_std": adapt_rhs_std,
+                "adapt_lhs_se": adapt_lhs_std / np.sqrt(np.maximum(adapt_lhs_count, 1)),
+                "adapt_rhs_se": adapt_rhs_std / np.sqrt(np.maximum(adapt_rhs_count, 1)),
+                "adapt_lhs_count": adapt_lhs_count,
+                "adapt_rhs_count": adapt_rhs_count,
+            }
+        )
+
+    return results
 
 
 def save_results(results, output_path):
@@ -582,11 +654,11 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    results_path = "results_n30f.npz"
+    results_path = "results_n10f.npz"
 
     results = run_experiments(
         num_seeds=10,
-        n_particles=30,
+        n_particles=10,
         fixed_n_steps=47000, 
         adapt_n_steps=47000,
         fixed_step_size=0.01,
@@ -599,6 +671,7 @@ if __name__ == "__main__":
         print_mean_history=True,
         adapt_stop_rel_tol=1e-6,
         adapt_stop_patience=3,
+        save_lhs_rhs_histories=False,
     )
 
     save_results(results, results_path)
