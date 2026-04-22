@@ -436,6 +436,10 @@ def run_experiments(
     adapt_histories = []
     adapt_lhs_histories = []
     adapt_rhs_histories = []
+<<<<<<< Updated upstream
+=======
+    adapt_lhs_checkpoint_steps = None
+>>>>>>> Stashed changes
     last_fixed_particles = None
     last_adapt_particles = None
     last_adapt_lhs = None
@@ -481,13 +485,20 @@ def run_experiments(
             print_stop=print_mean_history,
         )
 
-        if seed == num_seeds - 1:
+        should_keep_lhs_rhs = save_lhs_rhs_histories or seed == num_seeds - 1
+        lhs_rhs_checkpoint_steps = (
+            make_lhs_rhs_checkpoint_steps(adapt_n_steps)
+            if should_keep_lhs_rhs
+            else history_steps
+        )
+
+        if should_keep_lhs_rhs:
             (
                 adapt_particles,
                 adapt_final,
-                last_adapt_lhs,
-                last_adapt_rhs,
-                last_adapt_checkpoint_steps,
+                seed_adapt_lhs,
+                seed_adapt_rhs,
+                seed_adapt_checkpoint_steps,
                 adapt_history,
             ) = run_flow_adaptive_with_lhs_rhs(
                 x0=x0,
@@ -497,20 +508,35 @@ def run_experiments(
                 ell_schedule=ell_schedule_adapt,
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
-                checkpoint_steps=make_lhs_rhs_checkpoint_steps(adapt_n_steps),
+                checkpoint_steps=lhs_rhs_checkpoint_steps,
                 print_lhs_rhs=print_lhs_rhs and seed == 0,
                 fixed_history_for_print=fixed_history,
                 print_mean_history=print_mean_history,
                 stop_rel_tol=adapt_stop_rel_tol,
                 stop_patience=adapt_stop_patience,
             )
+            if seed == num_seeds - 1:
+                last_adapt_lhs = seed_adapt_lhs
+                last_adapt_rhs = seed_adapt_rhs
+                last_adapt_checkpoint_steps = seed_adapt_checkpoint_steps
+            if save_lhs_rhs_histories:
+                adapt_lhs_histories.append(seed_adapt_lhs)
+                adapt_rhs_histories.append(seed_adapt_rhs)
+                if adapt_lhs_checkpoint_steps is None:
+                    adapt_lhs_checkpoint_steps = seed_adapt_checkpoint_steps
         else:
             (
                 adapt_particles,
                 adapt_final,
+<<<<<<< Updated upstream
                 last_seed_lhs,
                 last_seed_rhs,
                 _last_seed_steps,
+=======
+                _seed_adapt_lhs,
+                _seed_adapt_rhs,
+                _seed_adapt_checkpoint_steps,
+>>>>>>> Stashed changes
                 adapt_history,
             ) = run_flow_adaptive_with_lhs_rhs(
                 x0=x0,
@@ -520,7 +546,7 @@ def run_experiments(
                 ell_schedule=ell_schedule_adapt,
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
-                checkpoint_steps=history_steps,
+                checkpoint_steps=lhs_rhs_checkpoint_steps,
                 print_lhs_rhs=print_lhs_rhs and seed == 0,
                 fixed_history_for_print=fixed_history,
                 print_mean_history=print_mean_history,
@@ -561,6 +587,7 @@ def run_experiments(
         adapt_histories_padded[history_idx, : history.shape[0]] = history
     fixed_history_mean = np.nanmean(fixed_histories_padded, axis=0)
     adapt_history_mean = np.nanmean(adapt_histories_padded, axis=0)
+<<<<<<< Updated upstream
     fixed_history_std = np.nanstd(fixed_histories_padded, axis=0)
     adapt_history_std = np.nanstd(adapt_histories_padded, axis=0)
     fixed_history_count = np.sum(~np.isnan(fixed_histories_padded), axis=0)
@@ -580,6 +607,24 @@ def run_experiments(
         "adapt_mean": float(np.mean(adapt_finals)),
         "adapt_std": float(np.std(adapt_finals)),
         "adapt_se": float(np.std(adapt_finals) / np.sqrt(max(len(adapt_finals), 1))),
+=======
+    fixed_history_count = np.sum(~np.isnan(fixed_histories_padded), axis=0)
+    adapt_history_count = np.sum(~np.isnan(adapt_histories_padded), axis=0)
+    fixed_history_std = np.nanstd(fixed_histories_padded, axis=0)
+    adapt_history_std = np.nanstd(adapt_histories_padded, axis=0)
+    fixed_history_se = fixed_history_std / np.sqrt(fixed_history_count)
+    adapt_history_se = adapt_history_std / np.sqrt(adapt_history_count)
+
+    results = {
+        "fixed_finals": np.array(fixed_finals, dtype=np.float64),
+        "adapt_finals": np.array(adapt_finals, dtype=np.float64),
+        "fixed_mean": float(np.mean(fixed_finals)),
+        "fixed_std": float(np.std(fixed_finals)),
+        "fixed_se": float(np.std(fixed_finals) / np.sqrt(len(fixed_finals))),
+        "adapt_mean": float(np.mean(adapt_finals)),
+        "adapt_std": float(np.std(adapt_finals)),
+        "adapt_se": float(np.std(adapt_finals) / np.sqrt(len(adapt_finals))),
+>>>>>>> Stashed changes
         "last_fixed_particles": last_fixed_particles,
         "last_adapt_particles": last_adapt_particles,
         "last_adapt_lhs": last_adapt_lhs,
@@ -598,6 +643,7 @@ def run_experiments(
         "adapt_history_se": adapt_history_se,
         "fixed_history_count": fixed_history_count,
         "adapt_history_count": adapt_history_count,
+<<<<<<< Updated upstream
         "save_lhs_rhs_histories": np.asarray(save_lhs_rhs_histories, dtype=np.bool_),
     }
 
@@ -630,14 +676,38 @@ def run_experiments(
                 "adapt_lhs_checkpoint_steps": history_steps[: adapt_lhs_mean.shape[0]],
                 "adapt_lhs_histories": adapt_lhs_histories_padded,
                 "adapt_rhs_histories": adapt_rhs_histories_padded,
+=======
+        "save_lhs_rhs_histories": np.array(save_lhs_rhs_histories, dtype=np.bool_),
+    }
+
+    if save_lhs_rhs_histories:
+        adapt_lhs_histories = np.asarray(adapt_lhs_histories, dtype=np.float64)
+        adapt_rhs_histories = np.asarray(adapt_rhs_histories, dtype=np.float64)
+        adapt_lhs_mean = np.mean(adapt_lhs_histories, axis=0)
+        adapt_rhs_mean = np.mean(adapt_rhs_histories, axis=0)
+        adapt_lhs_std = np.std(adapt_lhs_histories, axis=0)
+        adapt_rhs_std = np.std(adapt_rhs_histories, axis=0)
+        adapt_lhs_se = adapt_lhs_std / np.sqrt(adapt_lhs_histories.shape[0])
+        adapt_rhs_se = adapt_rhs_std / np.sqrt(adapt_rhs_histories.shape[0])
+        results.update(
+            {
+                "adapt_lhs_checkpoint_steps": adapt_lhs_checkpoint_steps,
+                "adapt_lhs_histories": adapt_lhs_histories,
+                "adapt_rhs_histories": adapt_rhs_histories,
+>>>>>>> Stashed changes
                 "adapt_lhs_mean": adapt_lhs_mean,
                 "adapt_rhs_mean": adapt_rhs_mean,
                 "adapt_lhs_std": adapt_lhs_std,
                 "adapt_rhs_std": adapt_rhs_std,
+<<<<<<< Updated upstream
                 "adapt_lhs_se": adapt_lhs_std / np.sqrt(np.maximum(adapt_lhs_count, 1)),
                 "adapt_rhs_se": adapt_rhs_std / np.sqrt(np.maximum(adapt_rhs_count, 1)),
                 "adapt_lhs_count": adapt_lhs_count,
                 "adapt_rhs_count": adapt_rhs_count,
+=======
+                "adapt_lhs_se": adapt_lhs_se,
+                "adapt_rhs_se": adapt_rhs_se,
+>>>>>>> Stashed changes
             }
         )
 
@@ -654,14 +724,21 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    results_path = "results_n30f.npz"
+    results_path = "results_n10f.npz"
 
     results = run_experiments(
         num_seeds=10,
+<<<<<<< Updated upstream
         n_particles=30,
         fixed_n_steps=45000, 
         adapt_n_steps=45000,
         fixed_step_size=0.08,
+=======
+        n_particles=10,
+        fixed_n_steps=47000, 
+        adapt_n_steps=47000,
+        fixed_step_size=0.01,
+>>>>>>> Stashed changes
         ell_fixed=0.1,
         ell0=10.0,
         ell_min=0.1,
@@ -671,7 +748,11 @@ if __name__ == "__main__":
         print_mean_history=True,
         adapt_stop_rel_tol=1e-15,
         adapt_stop_patience=3,
+<<<<<<< Updated upstream
         save_lhs_rhs_histories=False,
+=======
+        save_lhs_rhs_histories=True,
+>>>>>>> Stashed changes
     )
 
     save_results(results, results_path)
