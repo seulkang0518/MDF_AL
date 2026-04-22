@@ -160,7 +160,7 @@ def run_flow_fixed(x0, means, covs, weights, ell_schedule, step_size, eval_ell):
     return np.array(x_final), float(f_final)
 
 
-def run_flow_adaptive(x0, means, covs, weights, ell_schedule, eval_ell):
+def run_flow_adaptive(x0, means, covs, weights, ell_schedule, eval_ell, step_size=0.01):
     def one_step(x, ell):
         x_new = mmd_gf_one_step(
             x=x,
@@ -168,7 +168,7 @@ def run_flow_adaptive(x0, means, covs, weights, ell_schedule, eval_ell):
             covs=covs,
             weights=weights,
             ell=ell,
-            step_size=0.01,
+            step_size=jnp.asarray(step_size, dtype=ell.dtype),
         )
         return x_new, None
 
@@ -288,6 +288,7 @@ def run_flow_adaptive_with_lhs_rhs(
     covs,
     weights,
     ell_schedule,
+    step_size,
     ell_inf,
     eval_ell,
     checkpoint_steps,
@@ -305,7 +306,7 @@ def run_flow_adaptive_with_lhs_rhs(
                 covs=covs,
                 weights=weights,
                 ell=ell,
-                step_size=0.01,
+                step_size=jnp.asarray(step_size, dtype=ell.dtype),
             )
             return x_new, None
 
@@ -424,6 +425,7 @@ def run_experiments(
     ell0,
     ell_min,
     decay,
+    adapt_step_size=0.01,
     eval_ell=1.0,
     print_lhs_rhs=False,
     print_mean_history=False,
@@ -496,6 +498,7 @@ def run_experiments(
                 covs=covs_jnp,
                 weights=weights_jnp,
                 ell_schedule=ell_schedule_adapt,
+                step_size=np.float64(adapt_step_size),
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
                 checkpoint_steps=make_lhs_rhs_checkpoint_steps(adapt_n_steps),
@@ -519,6 +522,7 @@ def run_experiments(
                 covs=covs_jnp,
                 weights=weights_jnp,
                 ell_schedule=ell_schedule_adapt,
+                step_size=np.float64(adapt_step_size),
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
                 checkpoint_steps=history_steps,
@@ -599,6 +603,8 @@ def run_experiments(
         "adapt_history_se": adapt_history_se,
         "fixed_history_count": fixed_history_count,
         "adapt_history_count": adapt_history_count,
+        "fixed_step_size": np.asarray(fixed_step_size, dtype=np.float64),
+        "adapt_step_size": np.asarray(adapt_step_size, dtype=np.float64),
         "save_lhs_rhs_histories": np.asarray(save_lhs_rhs_histories, dtype=np.bool_),
     }
 
@@ -663,6 +669,7 @@ if __name__ == "__main__":
         fixed_n_steps=45000, 
         adapt_n_steps=45000,
         fixed_step_size=0.08,
+        adapt_step_size=0.01,
         ell_fixed=0.1,
         ell0=10.0,
         ell_min=0.1,
