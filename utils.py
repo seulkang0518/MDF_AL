@@ -1,199 +1,356 @@
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
-plt.rcParams['axes.grid'] = True
-plt.rcParams['font.family'] = 'DeJavu Serif'
-plt.rcParams['font.serif'] = ['Times New Roman']
-plt.rcParams['axes.labelsize'] = 18
-plt.rc('text', usetex=True)
-plt.rc('text.latex', preamble=r'\usepackage{amsmath, amsfonts, mathrsfs, amssymb}')
 
-# plt.rc('font', family='Arial', size=12)
-plt.rc('axes', titlesize=32, labelsize=32, grid=True)
-plt.rc('lines', linewidth=2)
-plt.rc('legend', fontsize=32, frameon=False)
-plt.rc('xtick', labelsize=26, direction='in')
-plt.rc('ytick', labelsize=26, direction='in')
-plt.rcParams['lines.markersize'] = 14
-plt.rc('figure', figsize=(6, 4), dpi=100)
-FIGSIZE=(6, 4)
+FIGSIZE = (6, 4)
 DPI = 100
-LOCAL_PLOT_RC = {
-    "text.usetex": False,
-    "axes.titlesize": 12,
-    "axes.labelsize": 10,
-    "legend.fontsize": 8,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "lines.linewidth": 1.6,
-    "lines.markersize": 4.5,
+SUMMARY_FIGSIZE = (24, 4.8)
+SUMMARY_DPI = 150
+TITLE_SIZE = 24
+LABEL_SIZE = 20
+TICK_SIZE = 16
+LEGEND_SIZE = 32
+MARKER_SIZE = 4.5
+LINE_WIDTH = 2.0
+TITLE_PAD = 8
+FOUR_PANEL_LEGEND_SIZE = 28
+
+COLORS = {
+    "mmd": "#d95f02",
+    "smmd": "#1b9e77",
+    "svgd": "#7570b3",
+    "sgd": "#1b9e77",
+    "sgd_dark": "#0f6f54",
+    "natural": "#7570b3",
+    "natural_dark": "#5b5696",
+    "pgd": "#d95f02",
+    "pgd_dark": "#D62728",
+    "lhs": "#D62728",
+    "rhs": "#111111",
+    "truth": "#f4b400",
 }
+
+BASE_PLOT_RC = {
+    "axes.grid": True,
+    "font.family": "DeJavu Serif",
+    "font.serif": ["Times New Roman"],
+    "text.usetex": False,
+    "figure.facecolor": "white",
+    "axes.facecolor": "white",
+    "axes.titlesize": TITLE_SIZE,
+    "axes.labelsize": LABEL_SIZE,
+    "legend.fontsize": LEGEND_SIZE,
+    "legend.frameon": False,
+    "xtick.labelsize": TICK_SIZE,
+    "ytick.labelsize": TICK_SIZE,
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+    "lines.linewidth": LINE_WIDTH,
+    "lines.markersize": MARKER_SIZE,
+    "figure.figsize": FIGSIZE,
+    "figure.dpi": DPI,
+}
+LOCAL_PLOT_RC = dict(BASE_PLOT_RC)
+plt.rcParams.update(BASE_PLOT_RC)
 
 
 def _load_npz_dict(npz_path):
+    npz_path = Path(npz_path)
     with np.load(npz_path) as data:
         return {key: data[key] for key in data.files}
+
+
+def _save_figure(fig, output_path=None, **savefig_kwargs):
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, **savefig_kwargs)
+    return fig
 
 
 def _sample_target_mog(num_samples, seed=0, radius=2.0, std=0.2, k=8):
     rng = np.random.default_rng(seed)
     angles = 2.0 * np.pi * np.arange(k, dtype=np.float64) / k
-    means = np.stack(
-        [radius * np.cos(angles), radius * np.sin(angles)],
-        axis=1,
-    )
+    means = np.stack([radius * np.cos(angles), radius * np.sin(angles)], axis=1)
     component_ids = rng.integers(0, k, size=num_samples)
     return means[component_ids] + rng.normal(scale=std, size=(num_samples, 2))
 
 
-def make_comparison_plot(
-    target_samples,
-    fixed_samples,
-    adaptive_samples,
-    fixed_mmd,
-    adaptive_mmd,
-    output_path,
-):
+def _comparison_plot_limits(target_samples, fixed_samples, adaptive_samples):
     all_samples = np.vstack([target_samples, fixed_samples, adaptive_samples])
     mins = all_samples.min(axis=0)
     maxs = all_samples.max(axis=0)
     center = 0.5 * (mins + maxs)
     span = np.max(maxs - mins)
     half_width = 0.55 * span
-    x_min, x_max = center[0] - half_width, center[0] + half_width
-    y_min, y_max = center[1] - half_width, center[1] + half_width
-
-    heatmap, xedges, yedges = np.histogram2d(
-        target_samples[:, 0],
-        target_samples[:, 1],
-        bins=80,
-        range=[[x_min, x_max], [y_min, y_max]],
-        density=True,
+    return (
+        center[0] - half_width,
+        center[0] + half_width,
+        center[1] - half_width,
+        center[1] + half_width,
     )
 
-    with plt.rc_context(LOCAL_PLOT_RC):
-        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
-        ax.imshow(
-            heatmap.T,
-            extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
-            origin="lower",
-            cmap="Blues",
-            alpha=0.6,
-            aspect="auto",
-        )
-        ax.scatter(
-            fixed_samples[:, 0],
-            fixed_samples[:, 1],
-            s=7,
-            c="#F17C67",
-            alpha=0.55,
-            edgecolors="none",
-            label=f"Fixed ({fixed_mmd:.4f})",
-        )
-        ax.scatter(
-            adaptive_samples[:, 0],
-            adaptive_samples[:, 1],
-            s=7,
-            c="#B23AEE",
-            alpha=0.45,
-            edgecolors="none",
-            label=f"Adaptive ({adaptive_mmd:.4f})",
-        )
-        ax.set_title("Target Density vs Fixed vs Adaptive", pad=8)
+
+def _draw_comparison_plot(ax, target_samples, fixed_samples, adaptive_samples, show_legend=True):
+    x_min, x_max, y_min, y_max = _comparison_plot_limits(
+        target_samples,
+        fixed_samples,
+        adaptive_samples,
+    )
+    ax.scatter(
+        fixed_samples[:, 0],
+        fixed_samples[:, 1],
+        s=7,
+        c=COLORS["mmd"],
+        alpha=0.55,
+        edgecolors="none",
+        label="Fixed",
+    )
+    ax.scatter(
+        adaptive_samples[:, 0],
+        adaptive_samples[:, 1],
+        s=7,
+        c=COLORS["smmd"],
+        alpha=0.45,
+        edgecolors="none",
+        label="Adaptive",
+    )
+    ax.set_facecolor("white")
+    ax.grid(True, alpha=0.15, linewidth=0.8)
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    if show_legend:
         ax.legend(loc="upper right", frameon=True)
-        ax.grid(True, alpha=0.15, linewidth=0.8)
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        fig.tight_layout()
-        fig.savefig(output_path)
-        plt.close(fig)
 
 
-def make_mmd_vs_n_plot(ns, fixed_mmd, adaptive_mmd, output_path):
+def _mmd_band_from_mean_se(mean, se=None, factor=2.0, se_scale=1.0):
+    mean = np.asarray(mean, dtype=float)
+    mmd = np.sqrt(np.maximum(factor * mean, 0.0))
+    if se is None:
+        return mmd, None
+
+    se = se_scale * np.asarray(se, dtype=float)
+    lower = np.sqrt(np.maximum(factor * (mean - se), 0.0))
+    upper = np.sqrt(np.maximum(factor * (mean + se), 0.0))
+    return mmd, (lower, upper)
+
+
+def _mmd_band_from_histories(histories, factor=2.0, se_scale=1.0):
+    histories = np.asarray(histories, dtype=float)
+    mmd_histories = np.sqrt(np.maximum(factor * histories, 0.0))
+    mmd = np.nanmean(mmd_histories, axis=0)
+    valid_counts = np.maximum(np.sum(~np.isnan(mmd_histories), axis=0), 1)
+    se = se_scale * np.nanstd(mmd_histories, axis=0) / np.sqrt(valid_counts)
+    return mmd, (np.maximum(mmd - se, 0.0), mmd + se)
+
+
+def _draw_mmd_vs_n_plot(
+    ax,
+    ns,
+    fixed_mmd,
+    adaptive_mmd,
+    fixed_band=None,
+    adaptive_band=None,
+    show_legend=True,
+    show_ylabel=True,
+):
     ns = np.asarray(ns, dtype=float)
     fixed_mmd = np.asarray(fixed_mmd, dtype=float)
     adaptive_mmd = np.asarray(adaptive_mmd, dtype=float)
 
-    with plt.rc_context(LOCAL_PLOT_RC):
-        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
-        ax.plot(ns, fixed_mmd, marker="o", color="#F17C67", label="Fixed")
-        ax.plot(ns, adaptive_mmd, marker="o", color="#B23AEE", label="Adaptive")
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("n")
+    if fixed_band is not None:
+        ax.fill_between(ns, fixed_band[0], fixed_band[1], color=COLORS["mmd"], alpha=0.22, linewidth=0)
+    if adaptive_band is not None:
+        ax.fill_between(ns, adaptive_band[0], adaptive_band[1], color=COLORS["smmd"], alpha=0.22, linewidth=0)
+
+    ax.plot(ns, fixed_mmd, marker="o", color=COLORS["mmd"], label="Fixed", zorder=3)
+    ax.plot(ns, adaptive_mmd, marker="o", color=COLORS["smmd"], label="Adaptive", zorder=3)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("n")
+    if show_ylabel:
         ax.set_ylabel("MMD")
-        ax.set_title("MMD vs n", pad=8)
-        ax.grid(True, which="major", alpha=0.15, linewidth=0.8)
+    ax.grid(True, which="major", alpha=0.15, linewidth=0.8)
+    if show_legend:
         ax.legend(frameon=True)
-        fig.tight_layout()
-        fig.savefig(output_path)
-        plt.close(fig)
 
 
-def make_mmd_vs_iteration_plot(fixed_mmd, adaptive_mmd, output_path):
+def _draw_mmd_vs_iteration_plot(
+    ax,
+    fixed_mmd,
+    adaptive_mmd,
+    fixed_steps=None,
+    adaptive_steps=None,
+    fixed_band=None,
+    adaptive_band=None,
+    show_legend=True,
+    show_ylabel=True,
+):
     fixed_mmd = np.asarray(fixed_mmd, dtype=float)
     adaptive_mmd = np.asarray(adaptive_mmd, dtype=float)
-    fixed_steps = np.arange(1, fixed_mmd.shape[0] + 1, dtype=float)
-    adaptive_steps = np.arange(1, adaptive_mmd.shape[0] + 1, dtype=float)
+    if fixed_steps is None:
+        fixed_steps = np.arange(1, fixed_mmd.shape[0] + 1, dtype=float)
+    if adaptive_steps is None:
+        adaptive_steps = np.arange(1, adaptive_mmd.shape[0] + 1, dtype=float)
+    fixed_steps = np.asarray(fixed_steps, dtype=float)
+    adaptive_steps = np.asarray(adaptive_steps, dtype=float)
 
-    with plt.rc_context(LOCAL_PLOT_RC):
-        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
-        ax.plot(fixed_steps, fixed_mmd, color="#F17C67", label="Fixed")
-        ax.plot(adaptive_steps, adaptive_mmd, color="#B23AEE", label="Adaptive")
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("Iteration")
+    if fixed_band is not None:
+        ax.fill_between(fixed_steps, fixed_band[0], fixed_band[1], color=COLORS["mmd"], alpha=0.22, linewidth=0)
+    if adaptive_band is not None:
+        ax.fill_between(
+            adaptive_steps,
+            adaptive_band[0],
+            adaptive_band[1],
+            color=COLORS["smmd"],
+            alpha=0.22,
+            linewidth=0,
+        )
+
+    ax.plot(fixed_steps, fixed_mmd, color=COLORS["mmd"], label="Fixed", zorder=3)
+    ax.plot(adaptive_steps, adaptive_mmd, color=COLORS["smmd"], label="Adaptive", zorder=3)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Iteration")
+    if show_ylabel:
         ax.set_ylabel("MMD")
-        ax.set_title("MMD vs Iteration", pad=8)
-        ax.grid(True, which="major", alpha=0.18, linewidth=0.8)
+    ax.grid(True, which="major", alpha=0.18, linewidth=0.8)
+    if show_legend:
         ax.legend(frameon=True)
-        fig.tight_layout()
-        fig.savefig(output_path)
-        plt.close(fig)
 
 
-def make_lhs_rhs_plot(steps, lhs, rhs, output_path):
+def _draw_lhs_rhs_plot(ax, steps, lhs, rhs, show_legend=True, show_ylabel=True):
     steps = np.asarray(steps, dtype=float)
     lhs = np.asarray(lhs, dtype=float)
     rhs = np.asarray(rhs, dtype=float)
+    ax.plot(steps, lhs, color=COLORS["lhs"], label="LHS")
+    ax.plot(steps, rhs, color=COLORS["rhs"], label="RHS")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Iteration")
+    if show_ylabel:
+        ax.set_ylabel("Value")
+    ax.set_title("LHS vs RHS", pad=TITLE_PAD)
+    ax.grid(True, which="major", alpha=0.18, linewidth=0.8)
+    if show_legend:
+        ax.legend(frameon=True)
 
+
+def make_comparison_plot(
+    target_samples,
+    fixed_samples,
+    adaptive_samples,
+    fixed_mmd=None,
+    adaptive_mmd=None,
+    output_path=None,
+):
     with plt.rc_context(LOCAL_PLOT_RC):
         fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
-        ax.plot(steps, lhs, color="#D62728", label="LHS")
-        ax.plot(steps, rhs, color="#111111", label="RHS")
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("Iteration")
-        ax.set_ylabel("Value")
-        ax.set_title("LHS vs RHS", pad=8)
-        ax.grid(True, which="major", alpha=0.18, linewidth=0.8)
-        ax.legend(frameon=True)
+        _draw_comparison_plot(ax, target_samples, fixed_samples, adaptive_samples)
         fig.tight_layout()
-        fig.savefig(output_path)
-        plt.close(fig)
+        return _save_figure(fig, output_path)
 
 
-def make_mmd_vs_iteration_plot_from_npz(npz_path, output_path):
+def make_mmd_vs_n_plot(ns, fixed_mmd, adaptive_mmd, output_path=None, fixed_band=None, adaptive_band=None):
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
+        _draw_mmd_vs_n_plot(
+            ax,
+            ns,
+            fixed_mmd,
+            adaptive_mmd,
+            fixed_band=fixed_band,
+            adaptive_band=adaptive_band,
+        )
+        fig.tight_layout()
+        return _save_figure(fig, output_path)
+
+
+def make_mmd_vs_iteration_plot(
+    fixed_mmd,
+    adaptive_mmd,
+    output_path=None,
+    fixed_steps=None,
+    adaptive_steps=None,
+    fixed_band=None,
+    adaptive_band=None,
+):
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
+        _draw_mmd_vs_iteration_plot(
+            ax,
+            fixed_mmd,
+            adaptive_mmd,
+            fixed_steps=fixed_steps,
+            adaptive_steps=adaptive_steps,
+            fixed_band=fixed_band,
+            adaptive_band=adaptive_band,
+        )
+        fig.tight_layout()
+        return _save_figure(fig, output_path)
+
+
+def make_lhs_rhs_plot(steps, lhs, rhs, output_path=None):
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
+        _draw_lhs_rhs_plot(ax, steps, lhs, rhs)
+        fig.tight_layout()
+        return _save_figure(fig, output_path)
+
+
+def _mmd_iteration_from_npz_data(data, se_scale=1.0):
+    if "fixed_hists" in data and "adapt_hists" in data:
+        fixed_mmd, fixed_band = _mmd_band_from_histories(data["fixed_hists"], se_scale=se_scale)
+        adaptive_mmd, adaptive_band = _mmd_band_from_histories(data["adapt_hists"], se_scale=se_scale)
+        fixed_steps = np.arange(1, fixed_mmd.shape[0] + 1, dtype=float)
+        adaptive_steps = np.arange(1, adaptive_mmd.shape[0] + 1, dtype=float)
+        return fixed_steps, fixed_mmd, fixed_band, adaptive_steps, adaptive_mmd, adaptive_band
+
+    if "fixed_histories" in data and "adapt_histories" in data:
+        fixed_mmd, fixed_band = _mmd_band_from_histories(data["fixed_histories"], se_scale=se_scale)
+        adaptive_mmd, adaptive_band = _mmd_band_from_histories(data["adapt_histories"], se_scale=se_scale)
+        fixed_steps = np.asarray(data.get("fixed_history_steps", np.arange(1, fixed_mmd.shape[0] + 1)), dtype=float)
+        adaptive_steps = np.asarray(data.get("adapt_history_steps", np.arange(1, adaptive_mmd.shape[0] + 1)), dtype=float)
+        return fixed_steps, fixed_mmd, fixed_band, adaptive_steps, adaptive_mmd, adaptive_band
+
+    fixed_steps = np.asarray(data["fixed_history_steps"], dtype=float)
+    adaptive_steps = np.asarray(data["adapt_history_steps"], dtype=float)
+    fixed_se = data["fixed_history_se"] if "fixed_history_se" in data else None
+    adaptive_se = data["adapt_history_se"] if "adapt_history_se" in data else None
+    fixed_mmd, fixed_band = _mmd_band_from_mean_se(data["fixed_history_mean"], fixed_se, se_scale=se_scale)
+    adaptive_mmd, adaptive_band = _mmd_band_from_mean_se(data["adapt_history_mean"], adaptive_se, se_scale=se_scale)
+    return fixed_steps, fixed_mmd, fixed_band, adaptive_steps, adaptive_mmd, adaptive_band
+
+
+def make_mmd_vs_iteration_plot_from_npz(npz_path, output_path=None, se_scale=1.0):
     data = _load_npz_dict(npz_path)
-    fixed_hists = np.asarray(data["fixed_hists"], dtype=float)
-    adaptive_hists = np.asarray(data["adapt_hists"], dtype=float)
-    fixed_mmd = np.sqrt(np.maximum(2.0 * fixed_hists.mean(axis=0), 0.0))
-    adaptive_mmd = np.sqrt(np.maximum(2.0 * adaptive_hists.mean(axis=0), 0.0))
-    make_mmd_vs_iteration_plot(fixed_mmd, adaptive_mmd, output_path)
+    fixed_steps, fixed_mmd, fixed_band, adaptive_steps, adaptive_mmd, adaptive_band = _mmd_iteration_from_npz_data(
+        data,
+        se_scale=se_scale,
+    )
+    return make_mmd_vs_iteration_plot(
+        fixed_mmd,
+        adaptive_mmd,
+        output_path=output_path,
+        fixed_steps=fixed_steps,
+        adaptive_steps=adaptive_steps,
+        fixed_band=fixed_band,
+        adaptive_band=adaptive_band,
+    )
 
 
-def make_lhs_rhs_plot_from_npz(npz_path, output_path):
+def make_lhs_rhs_plot_from_npz(npz_path, output_path=None):
     data = _load_npz_dict(npz_path)
-    steps = np.asarray(data["last_adapt_checkpoint_steps"], dtype=float)
-    lhs = np.asarray(data["last_adapt_lhs"], dtype=float)
-    rhs = np.asarray(data["last_adapt_rhs"], dtype=float)
-    make_lhs_rhs_plot(steps, lhs, rhs, output_path)
+    steps, lhs, rhs = _get_lhs_rhs_series(data)
+    return make_lhs_rhs_plot(steps, lhs, rhs, output_path=output_path)
 
 
 def make_comparison_plot_from_npz(
     npz_path,
-    output_path,
+    output_path=None,
     num_target_samples=5000,
     target_seed=0,
     radius=2.0,
@@ -212,7 +369,7 @@ def make_comparison_plot_from_npz(
     adaptive_samples = np.asarray(data["last_adapt_particles"], dtype=float)
     fixed_mmd = np.sqrt(max(2.0 * float(data["fixed_mean"]), 0.0))
     adaptive_mmd = np.sqrt(max(2.0 * float(data["adapt_mean"]), 0.0))
-    make_comparison_plot(
+    return make_comparison_plot(
         target_samples=target_samples,
         fixed_samples=fixed_samples,
         adaptive_samples=adaptive_samples,
@@ -222,65 +379,408 @@ def make_comparison_plot_from_npz(
     )
 
 
-def make_mmd_vs_n_plot_from_npz(npz_paths, ns, output_path):
+def make_mmd_vs_n_plot_from_npz(npz_paths, ns, output_path=None, se_scale=1.0):
     fixed_mmd = []
     adaptive_mmd = []
+    fixed_lower = []
+    fixed_upper = []
+    adaptive_lower = []
+    adaptive_upper = []
+    have_fixed_band = True
+    have_adaptive_band = True
 
     for npz_path in npz_paths:
         data = _load_npz_dict(npz_path)
-        fixed_mmd.append(np.sqrt(max(2.0 * float(data["fixed_mean"]), 0.0)))
-        adaptive_mmd.append(np.sqrt(max(2.0 * float(data["adapt_mean"]), 0.0)))
+        fixed_value, fixed_band = _mmd_band_from_mean_se(
+            data["fixed_mean"],
+            data["fixed_se"] if "fixed_se" in data else None,
+            se_scale=se_scale,
+        )
+        adaptive_value, adaptive_band = _mmd_band_from_mean_se(
+            data["adapt_mean"],
+            data["adapt_se"] if "adapt_se" in data else None,
+            se_scale=se_scale,
+        )
+        fixed_mmd.append(float(fixed_value))
+        adaptive_mmd.append(float(adaptive_value))
+        if fixed_band is None:
+            have_fixed_band = False
+        else:
+            fixed_lower.append(float(fixed_band[0]))
+            fixed_upper.append(float(fixed_band[1]))
+        if adaptive_band is None:
+            have_adaptive_band = False
+        else:
+            adaptive_lower.append(float(adaptive_band[0]))
+            adaptive_upper.append(float(adaptive_band[1]))
 
-    make_mmd_vs_n_plot(
+    fixed_band = (np.asarray(fixed_lower), np.asarray(fixed_upper)) if have_fixed_band else None
+    adaptive_band = (np.asarray(adaptive_lower), np.asarray(adaptive_upper)) if have_adaptive_band else None
+
+    return make_mmd_vs_n_plot(
         ns=np.asarray(ns, dtype=float),
         fixed_mmd=np.asarray(fixed_mmd, dtype=float),
         adaptive_mmd=np.asarray(adaptive_mmd, dtype=float),
         output_path=output_path,
+        fixed_band=fixed_band,
+        adaptive_band=adaptive_band,
     )
+
+
+def make_four_panel_figure(
+    comparison_npz,
+    mmd_vs_n_npz_paths,
+    mmd_vs_n_ns,
+    mmd_vs_iteration_npz,
+    lhs_rhs_npz,
+    output_path=None,
+    se_scale=1.0,
+):
+    comparison_data = _load_npz_dict(comparison_npz)
+    target_samples = _sample_target_mog(num_samples=5000, seed=0, radius=2.0, std=0.2, k=8)
+    fixed_samples = np.asarray(comparison_data["last_fixed_particles"], dtype=float)
+    adaptive_samples = np.asarray(comparison_data["last_adapt_particles"], dtype=float)
+
+    mmd_vs_n_fixed = []
+    mmd_vs_n_adaptive = []
+    mmd_vs_n_fixed_lower = []
+    mmd_vs_n_fixed_upper = []
+    mmd_vs_n_adaptive_lower = []
+    mmd_vs_n_adaptive_upper = []
+    have_mmd_vs_n_fixed_band = True
+    have_mmd_vs_n_adaptive_band = True
+    for npz_path in mmd_vs_n_npz_paths:
+        data = _load_npz_dict(npz_path)
+        fixed_value, fixed_band = _mmd_band_from_mean_se(
+            data["fixed_mean"],
+            data["fixed_se"] if "fixed_se" in data else None,
+            se_scale=se_scale,
+        )
+        adaptive_value, adaptive_band = _mmd_band_from_mean_se(
+            data["adapt_mean"],
+            data["adapt_se"] if "adapt_se" in data else None,
+            se_scale=se_scale,
+        )
+        mmd_vs_n_fixed.append(float(fixed_value))
+        mmd_vs_n_adaptive.append(float(adaptive_value))
+        if fixed_band is None:
+            have_mmd_vs_n_fixed_band = False
+        else:
+            mmd_vs_n_fixed_lower.append(float(fixed_band[0]))
+            mmd_vs_n_fixed_upper.append(float(fixed_band[1]))
+        if adaptive_band is None:
+            have_mmd_vs_n_adaptive_band = False
+        else:
+            mmd_vs_n_adaptive_lower.append(float(adaptive_band[0]))
+            mmd_vs_n_adaptive_upper.append(float(adaptive_band[1]))
+
+    mmd_vs_n_fixed = np.asarray(mmd_vs_n_fixed, dtype=float)
+    mmd_vs_n_adaptive = np.asarray(mmd_vs_n_adaptive, dtype=float)
+    mmd_vs_n_ns = np.asarray(mmd_vs_n_ns, dtype=float)
+    mmd_vs_n_fixed_band = (
+        (np.asarray(mmd_vs_n_fixed_lower), np.asarray(mmd_vs_n_fixed_upper))
+        if have_mmd_vs_n_fixed_band
+        else None
+    )
+    mmd_vs_n_adaptive_band = (
+        (np.asarray(mmd_vs_n_adaptive_lower), np.asarray(mmd_vs_n_adaptive_upper))
+        if have_mmd_vs_n_adaptive_band
+        else None
+    )
+
+    iteration_data = _load_npz_dict(mmd_vs_iteration_npz)
+    (
+        iteration_fixed_steps,
+        iteration_fixed_mmd,
+        iteration_fixed_band,
+        iteration_adaptive_steps,
+        iteration_adaptive_mmd,
+        iteration_adaptive_band,
+    ) = _mmd_iteration_from_npz_data(iteration_data, se_scale=se_scale)
+
+    lhs_rhs_data = _load_npz_dict(lhs_rhs_npz)
+    lhs_rhs_steps, lhs_values, rhs_values = _get_lhs_rhs_series(lhs_rhs_data)
+
+    top_legend_handles = [
+        Line2D([0], [0], color=COLORS["mmd"], marker="o", lw=2, label="Fixed"),
+        Line2D([0], [0], color=COLORS["smmd"], marker="o", lw=2, label="Adaptive"),
+    ]
+
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, axes = plt.subplots(1, 4, figsize=(24, 5), dpi=100)
+        ax_comparison, ax_mmd_n, ax_mmd_iter, ax_lhs_rhs = axes
+        _draw_comparison_plot(ax_comparison, target_samples, fixed_samples, adaptive_samples, show_legend=False)
+        _draw_mmd_vs_n_plot(
+            ax_mmd_n,
+            mmd_vs_n_ns,
+            mmd_vs_n_fixed,
+            mmd_vs_n_adaptive,
+            fixed_band=mmd_vs_n_fixed_band,
+            adaptive_band=mmd_vs_n_adaptive_band,
+            show_legend=False,
+        )
+        _draw_mmd_vs_iteration_plot(
+            ax_mmd_iter,
+            iteration_fixed_mmd,
+            iteration_adaptive_mmd,
+            fixed_steps=iteration_fixed_steps,
+            adaptive_steps=iteration_adaptive_steps,
+            fixed_band=iteration_fixed_band,
+            adaptive_band=iteration_adaptive_band,
+            show_legend=False,
+        )
+        _draw_lhs_rhs_plot(ax_lhs_rhs, lhs_rhs_steps, lhs_values, rhs_values)
+        fig.legend(
+            handles=top_legend_handles,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.1),
+            ncol=2,
+            fancybox=False,
+            facecolor="white",
+            fontsize=FOUR_PANEL_LEGEND_SIZE,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        return _save_figure(fig, output_path, bbox_inches="tight")
+
+
+def _gk_mmd_and_band_from_f_history(data, prefix, se_scale=1.96):
+    mean_key = f"{prefix}_eval_history_mean"
+    histories_key = f"{prefix}_eval_histories"
+    se_key = f"{prefix}_eval_history_se"
+
+    if histories_key in data:
+        f_histories = np.asarray(data[histories_key], dtype=float)
+        f_mean = np.nanmean(f_histories, axis=0)
+        mmd = np.sqrt(np.maximum(f_mean, 0.0))
+        mmd_histories = np.sqrt(np.maximum(f_histories, 0.0))
+        valid_counts = np.maximum(np.sum(~np.isnan(mmd_histories), axis=0), 1)
+        se = se_scale * np.nanstd(mmd_histories, axis=0) / np.sqrt(valid_counts)
+        return mmd, (np.maximum(mmd - se, 0.0), mmd + se)
+
+    f_mean = np.asarray(data[mean_key], dtype=float)
+    mmd = np.sqrt(np.maximum(f_mean, 0.0))
+    if se_key not in data:
+        return mmd, None
+
+    f_se = se_scale * np.asarray(data[se_key], dtype=float)
+    lower = np.sqrt(np.maximum(f_mean - f_se, 0.0))
+    upper = np.sqrt(np.maximum(f_mean + f_se, 0.0))
+    return mmd, (lower, upper)
+
+
+def _draw_gk_mmd_vs_iteration_plot(ax, data, show_legend=False, show_ylabel=True, se_scale=1.96):
+    baseline_steps = np.asarray(data["baseline_history_steps"], dtype=float) + 1.0
+    adaptive_steps = np.asarray(data["adaptive_history_steps"], dtype=float) + 1.0
+    baseline_mmd, baseline_band = _gk_mmd_and_band_from_f_history(data, "baseline", se_scale=se_scale)
+    adaptive_mmd, adaptive_band = _gk_mmd_and_band_from_f_history(data, "adaptive", se_scale=se_scale)
+
+    if baseline_band is not None:
+        ax.fill_between(
+            baseline_steps,
+            baseline_band[0],
+            baseline_band[1],
+            color=COLORS["sgd"],
+            alpha=0.22,
+            linewidth=0,
+            zorder=1,
+        )
+    ax.plot(baseline_steps, baseline_mmd, color=COLORS["sgd"], label="SGD", zorder=3)
+
+    if "natural_history_steps" in data and (
+        "natural_eval_history_mean" in data or "natural_eval_histories" in data
+    ):
+        natural_steps = np.asarray(data["natural_history_steps"], dtype=float) + 1.0
+        natural_mmd, natural_band = _gk_mmd_and_band_from_f_history(data, "natural", se_scale=se_scale)
+        if natural_band is not None:
+            ax.fill_between(
+                natural_steps,
+                natural_band[0],
+                natural_band[1],
+                color=COLORS["natural"],
+                alpha=0.22,
+                linewidth=0,
+                zorder=1,
+            )
+        ax.plot(natural_steps, natural_mmd, color=COLORS["natural"], label="Natural SGD", zorder=3)
+
+    if adaptive_band is not None:
+        ax.fill_between(
+            adaptive_steps,
+            adaptive_band[0],
+            adaptive_band[1],
+            color=COLORS["pgd"],
+            alpha=0.22,
+            linewidth=0,
+            zorder=1,
+        )
+    ax.plot(adaptive_steps, adaptive_mmd, color=COLORS["pgd"], label="PGD", zorder=3)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Iteration")
+    if show_ylabel:
+        ax.set_ylabel("MMD")
+    ax.grid(True, which="major", alpha=0.18, linewidth=0.8)
+    if show_legend:
+        ax.legend()
+
+
+def _get_lhs_rhs_series(data):
+    if all(key in data for key in ("last_adapt_checkpoint_steps", "last_adapt_lhs", "last_adapt_rhs")):
+        step_offset = 1.0 if "theta_true" in data or "baseline_history_steps" in data else 0.0
+        steps = np.asarray(data["last_adapt_checkpoint_steps"], dtype=float) + step_offset
+        lhs = np.asarray(data["last_adapt_lhs"], dtype=float)
+        rhs = np.asarray(data["last_adapt_rhs"], dtype=float)
+        return steps, lhs, rhs
+
+    if all(key in data for key in ("adaptive_history_steps", "adaptive_lhs_history_mean", "adaptive_rhs_history_mean")):
+        steps = np.asarray(data["adaptive_history_steps"], dtype=float) + 1.0
+        lhs = np.asarray(data["adaptive_lhs_history_mean"], dtype=float)
+        rhs = np.asarray(data["adaptive_rhs_history_mean"], dtype=float)
+        return steps, lhs, rhs
+
+    if all(key in data for key in ("adapt_lhs_checkpoint_steps", "adapt_lhs_mean", "adapt_rhs_mean")):
+        steps = np.asarray(data["adapt_lhs_checkpoint_steps"], dtype=float)
+        lhs = np.asarray(data["adapt_lhs_mean"], dtype=float)
+        rhs = np.asarray(data["adapt_rhs_mean"], dtype=float)
+        return steps, lhs, rhs
+
+    raise KeyError("Could not find adaptive LHS/RHS series in the provided result file.")
+
+
+def _plot_theta_branch(ax, hist, cols, color, markevery):
+    ax.plot(hist[:, cols[0]], hist[:, cols[1]], color=color, marker="o", markevery=markevery)
+    ax.scatter(hist[0, cols[0]], hist[0, cols[1]], color="white", edgecolors=color, linewidths=1.5, s=50, zorder=4)
+    ax.scatter(hist[-1, cols[0]], hist[-1, cols[1]], color=color, marker="s", s=50, zorder=5)
+
+
+def _draw_gk_mean_theta_trajectories(ax_ab, ax_ck, npz_paths, show_true=True):
+    method_colors = {
+        "baseline": [COLORS["sgd"], COLORS["sgd_dark"]],
+        "natural": [COLORS["natural"], COLORS["natural_dark"]],
+        "adaptive": [COLORS["pgd"], COLORS["pgd_dark"]],
+    }
+    method_keys = {
+        "baseline": "baseline_theta_history_mean",
+        "natural": "natural_theta_history_mean",
+        "adaptive": "adaptive_theta_history_mean",
+    }
+    theta_true = None
+
+    for idx, npz_path in enumerate(npz_paths):
+        data = _load_npz_dict(npz_path)
+        theta_true = np.asarray(data["theta_true"], dtype=float)
+
+        for method_name, history_key in method_keys.items():
+            if history_key not in data:
+                continue
+
+            hist = np.asarray(data[history_key], dtype=float)
+            color = method_colors[method_name][idx % len(method_colors[method_name])]
+            markevery = max(1, len(hist) // 22)
+            _plot_theta_branch(ax_ab, hist, (0, 1), color, markevery)
+            _plot_theta_branch(ax_ck, hist, (2, 3), color, markevery)
+
+    if show_true and theta_true is not None:
+        ax_ab.scatter(theta_true[0], theta_true[1], marker="*", s=600, color=COLORS["truth"], zorder=6)
+        ax_ck.scatter(theta_true[2], theta_true[3], marker="*", s=600, color=COLORS["truth"], zorder=6)
+
+    ax_ab.set_xlabel("Parameter 1")
+    ax_ab.set_ylabel("Parameter 2")
+    ax_ck.set_xlabel("Parameter 3")
+    ax_ck.set_ylabel("Parameter 4")
+    ax_ab.grid(True, alpha=0.35)
+    ax_ck.grid(True, alpha=0.35)
+
+
+def make_f_vs_iteration_plot_from_gk_npz(npz_path, output_path=None, se_scale=1.96):
+    data = _load_npz_dict(npz_path)
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
+        _draw_gk_mmd_vs_iteration_plot(ax, data, show_legend=True, se_scale=se_scale)
+        fig.tight_layout()
+        return _save_figure(fig, output_path)
+
+
+def make_gk_theta_trajectory_plot_from_npz(npz_path, output_path=None):
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), dpi=SUMMARY_DPI)
+        _draw_gk_mean_theta_trajectories(axes[0], axes[1], [npz_path])
+        fig.tight_layout()
+        return _save_figure(fig, output_path)
+
+
+def make_gk_summary_figure(
+    mmd_npz_path,
+    trajectory_npz_paths,
+    lhs_rhs_npz_path,
+    output_path=None,
+    show_method_legend=False,
+    show_lhs_rhs_legend=True,
+    se_scale=1.96,
+):
+    mmd_data = _load_npz_dict(mmd_npz_path)
+    lhs_rhs_data = _load_npz_dict(lhs_rhs_npz_path)
+    lhs_rhs_steps, lhs, rhs = _get_lhs_rhs_series(lhs_rhs_data)
+
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, axes = plt.subplots(
+            1,
+            4,
+            figsize=SUMMARY_FIGSIZE,
+            dpi=SUMMARY_DPI,
+            gridspec_kw={"width_ratios": [1.15, 1.15, 1.0, 1.0]},
+        )
+        ax_ab, ax_ck, ax_mmd, ax_lhs_rhs = axes
+        _draw_gk_mean_theta_trajectories(ax_ab, ax_ck, trajectory_npz_paths)
+        _draw_gk_mmd_vs_iteration_plot(
+            ax_mmd,
+            mmd_data,
+            show_legend=show_method_legend,
+            se_scale=se_scale,
+        )
+        _draw_lhs_rhs_plot(ax_lhs_rhs, lhs_rhs_steps, lhs, rhs, show_legend=show_lhs_rhs_legend)
+
+        legend_handles = [
+            Line2D([0], [0], color=COLORS["sgd"], lw=LINE_WIDTH, label="SGD"),
+            Line2D([0], [0], color=COLORS["natural"], lw=LINE_WIDTH, label="Natural SGD"),
+            Line2D([0], [0], color=COLORS["pgd"], lw=LINE_WIDTH, label="PGD"),
+        ]
+        fig.legend(handles=legend_handles, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.1))
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
+        return _save_figure(fig, output_path, bbox_inches="tight")
 
 
 def merge_four_figures(image_paths, output_path, titles=None):
     images = [plt.imread(path) for path in image_paths]
-
     fig, axes = plt.subplots(1, 4, figsize=(18, 4.8), dpi=150)
     axes = np.atleast_1d(axes)
 
     for ax, img in zip(axes, images):
         ax.imshow(img)
         ax.axis("off")
-
     for ax in axes[len(images) :]:
         ax.axis("off")
 
     fig.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.01, wspace=0.04)
-    fig.savefig(output_path, bbox_inches="tight")
-    plt.close(fig)
+    return _save_figure(fig, output_path, bbox_inches="tight")
 
 
 if __name__ == "__main__":
-    comparison_npz = "/Users/sophiakang/Documents/GitHub/MDF_AL/results_n300.npz"
-    mmd_vs_n_npz_paths = [
-        "/Users/sophiakang/Documents/GitHub/MDF_AL/results_n10.npz",
-        "/Users/sophiakang/Documents/GitHub/MDF_AL/results_n30.npz",
-        "/Users/sophiakang/Documents/GitHub/MDF_AL/results_n100.npz",
-        "/Users/sophiakang/Documents/GitHub/MDF_AL/results_n300.npz",
-    ]
-    mmd_vs_n_ns = [10, 30, 100, 300]
-    mmd_vs_iteration_npz = "/Users/sophiakang/Documents/GitHub/MDF_AL/mmd_iteration_100.npz"
-    lhs_rhs_npz = "/Users/sophiakang/Documents/GitHub/MDF_AL/lhs_rhs.npz"
+    root = Path(__file__).resolve().parent
+    figures_dir = root / "figures"
 
-    comparison_out = "/Users/sophiakang/Documents/GitHub/MDF_AL/mog_comparison.png"
-    mmd_vs_n_out = "/Users/sophiakang/Documents/GitHub/MDF_AL/mmd_vs_n.png"
-    mmd_vs_iteration_out = "/Users/sophiakang/Documents/GitHub/MDF_AL/mmd_vs_iteration.png"
-    lhs_rhs_out = "/Users/sophiakang/Documents/GitHub/MDF_AL/lhs_rhs.png"
-    merged_out = "/Users/sophiakang/Documents/GitHub/MDF_AL/all_figures.png"
-
-    make_comparison_plot_from_npz(comparison_npz, comparison_out)
-    make_mmd_vs_n_plot_from_npz(mmd_vs_n_npz_paths, mmd_vs_n_ns, mmd_vs_n_out)
-    make_mmd_vs_iteration_plot_from_npz(mmd_vs_iteration_npz, mmd_vs_iteration_out)
-    make_lhs_rhs_plot_from_npz(lhs_rhs_npz, lhs_rhs_out)
-
-    merge_four_figures(
-        [comparison_out, mmd_vs_n_out, mmd_vs_iteration_out, lhs_rhs_out],
-        merged_out,
+    make_four_panel_figure(
+        comparison_npz=root / "results_n100f.npz",
+        mmd_vs_n_npz_paths=[
+            root / "results_n10f.npz",
+            root / "results_n30f.npz",
+            root / "results_n100f.npz",
+            root / "results_n300f.npz",
+        ],
+        mmd_vs_n_ns=[10, 30, 100, 300],
+        mmd_vs_iteration_npz=root / "results_n300f.npz",
+        lhs_rhs_npz=root / "results_n100f.npz",
+        output_path=figures_dir / "mmd_flow_from_utils.pdf",
+        se_scale=1.96,
     )

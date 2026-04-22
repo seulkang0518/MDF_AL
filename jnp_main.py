@@ -167,7 +167,7 @@ def run_flow_adaptive(x0, means, covs, weights, ell_schedule, eval_ell):
             covs=covs,
             weights=weights,
             ell=ell,
-            step_size=(ell**2) / 12.0,
+            step_size=0.01,
         )
         return x_new, None
 
@@ -304,7 +304,7 @@ def run_flow_adaptive_with_lhs_rhs(
                 covs=covs,
                 weights=weights,
                 ell=ell,
-                step_size=(ell**2) / 12.0,
+                step_size=0.01,
             )
             return x_new, None
 
@@ -654,14 +654,14 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    results_path = "results_n10f.npz"
+    results_path = "results_n30f.npz"
 
     results = run_experiments(
         num_seeds=10,
-        n_particles=10,
-        fixed_n_steps=47000, 
-        adapt_n_steps=47000,
-        fixed_step_size=0.01,
+        n_particles=30,
+        fixed_n_steps=45000, 
+        adapt_n_steps=45000,
+        fixed_step_size=0.08,
         ell_fixed=0.1,
         ell0=10.0,
         ell_min=0.1,
@@ -669,7 +669,7 @@ if __name__ == "__main__":
         eval_ell=0.1,
         print_lhs_rhs=True,
         print_mean_history=True,
-        adapt_stop_rel_tol=1e-6,
+        adapt_stop_rel_tol=1e-15,
         adapt_stop_patience=3,
         save_lhs_rhs_histories=False,
     )
