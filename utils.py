@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -765,22 +766,150 @@ def merge_four_figures(image_paths, output_path, titles=None):
     fig.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.01, wspace=0.04)
     return _save_figure(fig, output_path, bbox_inches="tight")
 
+def make_lv_lengthscale_lambda_heatmap(
+    results_dir,
+    lambdas=(1e-4, 1e-3, 1e-2),
+    metric_key="pgd_eval_mean",
+    output_path=None,
+    apply_log10=True,
+    metric_name="MMD",  # change to "KSD" if needed
+    use_sqrt_metric=False,
+):
+    """Render the LV lambda-lengthscale matrix in an annotated heatmap style."""
+    results_dir = Path(results_dir)
+
+    filename_pattern = re.compile(
+        r"lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_"
+        r"(?P<ell>[^_]+)_lambda_(?P<lam>[^_]+)\.npz$"
+    )
+
+    requested_lambdas = np.asarray(lambdas, dtype=float)
+    lambda_set = {float(v) for v in requested_lambdas}
+
+    metric_by_cell = {}
+    ell_values = set()
+
+    file_pattern = (
+        "lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_*_lambda_*.npz"
+    )
+
+    for npz_path in sorted(results_dir.glob(file_pattern)):
+        match = filename_pattern.match(npz_path.name)
+        if match is None:
+            continue
+
+        ell = float(match.group("ell").replace("p", "."))
+        lam = float(match.group("lam").replace("p", "."))
+
+        if lam not in lambda_set:
+            continue
+
+        data = _load_npz_dict(npz_path)
+        metric_value = float(np.asarray(data[metric_key], dtype=float))
+        if use_sqrt_metric:
+            metric_value = float(np.sqrt(max(metric_value, 0.0)))
+        metric_by_cell[(lam, ell)] = metric_value
+        ell_values.add(ell)
+
+    if not metric_by_cell:
+        raise ValueError(
+            f"No matching files found in {results_dir} "
+            f"for lambdas={list(requested_lambdas)}."
+        )
+
+    sorted_ells = np.asarray(sorted(ell_values), dtype=float)
+
+    metric_grid = np.full(
+        (len(requested_lambdas), len(sorted_ells)),
+        np.nan,
+        dtype=float,
+    )
+
+    for i, lam in enumerate(requested_lambdas):
+        for j, ell in enumerate(sorted_ells):
+            key = (float(lam), float(ell))
+            if key in metric_by_cell:
+                metric_grid[i, j] = metric_by_cell[key]
+
+    if apply_log10:
+        plot_grid = np.log10(np.maximum(metric_grid, 1e-32))
+        colorbar_label = rf"$\log_{{10}}(\mathrm{{{metric_name}}})$"
+    else:
+        plot_grid = metric_grid
+        colorbar_label = metric_name
+
+    plot_rc = {
+        **LOCAL_PLOT_RC,
+
+        "font.family": "STIXGeneral",
+        "mathtext.fontset": "stix",
+    }
+
+    with plt.rc_context(plot_rc):
+        fig, ax = plt.subplots(figsize=(8.0, 5.0), dpi=SUMMARY_DPI)
+
+        im = ax.imshow(plot_grid, cmap="viridis", aspect="auto")
+
+        ax.set_xticks(np.arange(len(sorted_ells)))
+        ax.set_yticks(np.arange(len(requested_lambdas)))
+
+        ax.set_xticklabels([f"{ell:g}" for ell in sorted_ells])
+        ax.set_yticklabels([f"{lam:g}" for lam in requested_lambdas])
+
+        ax.set_xlabel(r"$\ell_{\infty}$", fontsize=26)
+        ax.set_ylabel(r"$\lambda$", fontsize=26)
+
+        ax.grid(False)
+        ax.tick_params(axis="both", labelsize=20)
+
+        for i in range(metric_grid.shape[0]):
+            for j in range(metric_grid.shape[1]):
+                if np.isfinite(metric_grid[i, j]):
+                    ax.text(
+                        j,
+                        i,
+                        f"{metric_grid[i, j]:.1e}",
+                        ha="center",
+                        va="center",
+                        color="white",
+                        fontsize=11,
+                    )
+
+        cbar = fig.colorbar(im, ax=ax)
+
+        cbar.set_label(
+            colorbar_label,
+            fontsize=18,
+            rotation=270,
+            labelpad=35,
+        )
+
+        cbar.ax.tick_params(labelsize=14)
+
+        fig.tight_layout()
+
+        return _save_figure(fig, output_path, bbox_inches="tight")
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent
-    figures_dir = root / "figures"
+    figures_dir = root / "ab"
 
-    make_four_panel_figure(
-        comparison_npz=root / "results_n100f.npz",
-        mmd_vs_n_npz_paths=[
-            root / "results_n10f.npz",
-            root / "results_n30f.npz",
-            root / "results_n100f.npz",
-            root / "results_n300f.npz",
-        ],
-        mmd_vs_n_ns=[10, 30, 100, 300],
-        mmd_vs_iteration_npz=root / "results_n300f.npz",
-        lhs_rhs_npz=root / "results_n100f.npz",
-        output_path=figures_dir / "mmd_flow_from_utils.pdf",
-        se_scale=1.96,
-    )
+    # make_four_panel_figure(
+    #     comparison_npz=root / "results_n100f.npz",
+    #     mmd_vs_n_npz_paths=[
+    #         root / "results_n10f.npz",
+    #         root / "results_n30f.npz",
+    #         root / "results_n100f.npz",
+    #         root / "results_n300f.npz",
+    #     ],
+    #     mmd_vs_n_ns=[10, 30, 100, 300],
+    #     mmd_vs_iteration_npz=root / "results_n300f.npz",
+    #     lhs_rhs_npz=root / "results_n100f.npz",
+    #     output_path=figures_dir / "mmd_flow_from_utils.pdf",
+    #     se_scale=1.96,
+    # )
+    make_lv_lengthscale_lambda_heatmap(
+    figures_dir,
+    lambdas=(1.0, 0.1, 0.01),
+    metric_name="KSD",
+)

@@ -1,5 +1,7 @@
-
+import os
+os.environ["JAX_PLATFORMS"] = "cpu"
 import numpy as np
+import time
 
 import jax
 jax.config.update("jax_enable_x64", True)
@@ -160,7 +162,15 @@ def run_flow_fixed(x0, means, covs, weights, ell_schedule, step_size, eval_ell):
     return np.array(x_final), float(f_final)
 
 
-def run_flow_adaptive(x0, means, covs, weights, ell_schedule, eval_ell, step_size=0.01):
+def run_flow_adaptive(
+    x0,
+    means,
+    covs,
+    weights,
+    ell_schedule,
+    eval_ell,
+    step_size=0.01,
+):
     def one_step(x, ell):
         x_new = mmd_gf_one_step(
             x=x,
@@ -242,6 +252,8 @@ def run_flow_fixed_with_history(
         x = run_segment(x, ell_schedule[prev_step:step])
         f_values.append(float(f_value(x, means, covs, weights, eval_ell, term_yy)))
         f_current = f_values[-1]
+        if print_stop:
+            print(f"step={int(step):d} fixed_mean={f_current:.6e}")
         rel_change = None
         if prev_f is not None:
             rel_change = abs(prev_f - f_current) / max(abs(prev_f), 1e-300)
@@ -437,6 +449,8 @@ def run_experiments(
     adapt_finals = []
     fixed_histories = []
     adapt_histories = []
+    fixed_times = []
+    adapt_times = []
     adapt_lhs_histories = []
     adapt_rhs_histories = []
     last_fixed_particles = None
@@ -444,7 +458,8 @@ def run_experiments(
     last_adapt_lhs = None
     last_adapt_rhs = None
     last_adapt_checkpoint_steps = None
-    history_steps = make_lhs_rhs_checkpoint_steps(min(fixed_n_steps, adapt_n_steps))
+    fixed_checkpoint_steps = make_lhs_rhs_checkpoint_steps(fixed_n_steps)
+    adapt_checkpoint_steps = make_lhs_rhs_checkpoint_steps(adapt_n_steps)
 
     means_jnp = jnp.array(means)
     covs_jnp = jnp.array(covs)
@@ -470,6 +485,7 @@ def run_experiments(
             decay=np.float64(decay),
         )
 
+        fixed_t0 = time.perf_counter()
         fixed_particles, fixed_final, fixed_history = run_flow_fixed_with_history(
             x0=x0,
             means=means_jnp,
@@ -478,13 +494,15 @@ def run_experiments(
             ell_schedule=ell_schedule_fixed,
             step_size=np.float64(fixed_step_size),
             eval_ell=np.float64(eval_ell),
-            checkpoint_steps=history_steps,
+            checkpoint_steps=fixed_checkpoint_steps,
             stop_rel_tol=adapt_stop_rel_tol,
             stop_patience=adapt_stop_patience,
             print_stop=print_mean_history,
         )
+        fixed_times.append(time.perf_counter() - fixed_t0)
 
         if seed == num_seeds - 1:
+            adapt_t0 = time.perf_counter()
             (
                 adapt_particles,
                 adapt_final,
@@ -501,14 +519,16 @@ def run_experiments(
                 step_size=np.float64(adapt_step_size),
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
-                checkpoint_steps=make_lhs_rhs_checkpoint_steps(adapt_n_steps),
+                checkpoint_steps=adapt_checkpoint_steps,
                 print_lhs_rhs=print_lhs_rhs and seed == 0,
-                fixed_history_for_print=fixed_history,
+                fixed_history_for_print=None,
                 print_mean_history=print_mean_history,
                 stop_rel_tol=adapt_stop_rel_tol,
                 stop_patience=adapt_stop_patience,
             )
+            adapt_times.append(time.perf_counter() - adapt_t0)
         else:
+            adapt_t0 = time.perf_counter()
             (
                 adapt_particles,
                 adapt_final,
@@ -525,25 +545,26 @@ def run_experiments(
                 step_size=np.float64(adapt_step_size),
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
-                checkpoint_steps=history_steps,
+                checkpoint_steps=adapt_checkpoint_steps,
                 print_lhs_rhs=print_lhs_rhs and seed == 0,
-                fixed_history_for_print=fixed_history,
+                fixed_history_for_print=None,
                 print_mean_history=print_mean_history,
                 stop_rel_tol=adapt_stop_rel_tol,
                 stop_patience=adapt_stop_patience,
             )
+            adapt_times.append(time.perf_counter() - adapt_t0)
 
         fixed_finals.append(fixed_final)
         adapt_finals.append(adapt_final)
         fixed_histories.append(fixed_history)
-        adapt_histories.append(adapt_history[: history_steps.shape[0]])
+        adapt_histories.append(adapt_history)
         if save_lhs_rhs_histories:
             if seed == num_seeds - 1:
-                adapt_lhs_histories.append(last_adapt_lhs[: history_steps.shape[0]])
-                adapt_rhs_histories.append(last_adapt_rhs[: history_steps.shape[0]])
+                adapt_lhs_histories.append(last_adapt_lhs)
+                adapt_rhs_histories.append(last_adapt_rhs)
             else:
-                adapt_lhs_histories.append(last_seed_lhs[: history_steps.shape[0]])
-                adapt_rhs_histories.append(last_seed_rhs[: history_steps.shape[0]])
+                adapt_lhs_histories.append(last_seed_lhs)
+                adapt_rhs_histories.append(last_seed_rhs)
         last_fixed_particles = fixed_particles
         last_adapt_particles = adapt_particles
 
@@ -575,8 +596,11 @@ def run_experiments(
 
     fixed_finals = np.array(fixed_finals, dtype=np.float64)
     adapt_finals = np.array(adapt_finals, dtype=np.float64)
+    fixed_times = np.array(fixed_times, dtype=np.float64)
+    adapt_times = np.array(adapt_times, dtype=np.float64)
 
     results = {
+        "seeds": np.arange(num_seeds, dtype=np.int64),
         "fixed_finals": fixed_finals,
         "adapt_finals": adapt_finals,
         "fixed_mean": float(np.mean(fixed_finals)),
@@ -585,14 +609,23 @@ def run_experiments(
         "adapt_mean": float(np.mean(adapt_finals)),
         "adapt_std": float(np.std(adapt_finals)),
         "adapt_se": float(np.std(adapt_finals) / np.sqrt(max(len(adapt_finals), 1))),
+        "fixed_times": fixed_times,
+        "adapt_times": adapt_times,
+        "fixed_time_mean": float(np.mean(fixed_times)),
+        "fixed_time_std": float(np.std(fixed_times)),
+        "fixed_time_se": float(np.std(fixed_times) / np.sqrt(max(len(fixed_times), 1))),
+        "adapt_time_mean": float(np.mean(adapt_times)),
+        "adapt_time_std": float(np.std(adapt_times)),
+        "adapt_time_se": float(np.std(adapt_times) / np.sqrt(max(len(adapt_times), 1))),
         "last_fixed_particles": last_fixed_particles,
         "last_adapt_particles": last_adapt_particles,
         "last_adapt_lhs": last_adapt_lhs,
         "last_adapt_rhs": last_adapt_rhs,
         "last_adapt_checkpoint_steps": last_adapt_checkpoint_steps,
-        "history_steps": history_steps,
-        "fixed_history_steps": history_steps[: fixed_history_mean.shape[0]],
-        "adapt_history_steps": history_steps[: adapt_history_mean.shape[0]],
+        # Backward-compatible alias: default to fixed timeline so longer fixed runs are visible.
+        "history_steps": fixed_checkpoint_steps,
+        "fixed_history_steps": fixed_checkpoint_steps[: fixed_history_mean.shape[0]],
+        "adapt_history_steps": adapt_checkpoint_steps[: adapt_history_mean.shape[0]],
         "fixed_histories": fixed_histories_padded,
         "adapt_histories": adapt_histories_padded,
         "fixed_history_mean": fixed_history_mean,
@@ -634,7 +667,7 @@ def run_experiments(
 
         results.update(
             {
-                "adapt_lhs_checkpoint_steps": history_steps[: adapt_lhs_mean.shape[0]],
+                "adapt_lhs_checkpoint_steps": adapt_checkpoint_steps[: adapt_lhs_mean.shape[0]],
                 "adapt_lhs_histories": adapt_lhs_histories_padded,
                 "adapt_rhs_histories": adapt_rhs_histories_padded,
                 "adapt_lhs_mean": adapt_lhs_mean,
@@ -661,14 +694,14 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    results_path = "results_n30f.npz"
+    results_path = "results_n10f.npz"
 
     results = run_experiments(
         num_seeds=10,
-        n_particles=30,
-        fixed_n_steps=45000, 
-        adapt_n_steps=45000,
-        fixed_step_size=0.08,
+        n_particles=10,
+        fixed_n_steps=100000, 
+        adapt_n_steps=70000,
+        fixed_step_size=1.1,
         adapt_step_size=0.01,
         ell_fixed=0.1,
         ell0=10.0,
