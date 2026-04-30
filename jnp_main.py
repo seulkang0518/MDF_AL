@@ -215,6 +215,7 @@ def run_flow_fixed_with_history(
     stop_rel_tol=None,
     stop_patience=3,
     print_stop=False,
+    print_history=False,
 ):
     def run_segment(x, ell_segment):
         def one_step(x_inner, ell):
@@ -441,6 +442,8 @@ def run_experiments(
     eval_ell=1.0,
     print_lhs_rhs=False,
     print_mean_history=False,
+    fixed_stop_rel_tol=None,
+    fixed_stop_patience=3,
     adapt_stop_rel_tol=None,
     adapt_stop_patience=3,
     save_lhs_rhs_histories=False,
@@ -498,6 +501,7 @@ def run_experiments(
             stop_rel_tol=adapt_stop_rel_tol,
             stop_patience=adapt_stop_patience,
             print_stop=print_mean_history,
+            print_history=print_mean_history,
         )
         fixed_times.append(time.perf_counter() - fixed_t0)
 
@@ -638,6 +642,10 @@ def run_experiments(
         "adapt_history_count": adapt_history_count,
         "fixed_step_size": np.asarray(fixed_step_size, dtype=np.float64),
         "adapt_step_size": np.asarray(adapt_step_size, dtype=np.float64),
+        "fixed_n_steps": np.asarray(fixed_n_steps, dtype=np.int64),
+        "adapt_n_steps": np.asarray(adapt_n_steps, dtype=np.int64),
+        "fixed_stop_rel_tol": np.asarray(np.nan if fixed_stop_rel_tol is None else fixed_stop_rel_tol, dtype=np.float64),
+        "adapt_stop_rel_tol": np.asarray(np.nan if adapt_stop_rel_tol is None else adapt_stop_rel_tol, dtype=np.float64),
         "save_lhs_rhs_histories": np.asarray(save_lhs_rhs_histories, dtype=np.bool_),
     }
 
@@ -694,6 +702,7 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
+
     results_path = "results_n10f.npz"
 
     results = run_experiments(

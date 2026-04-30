@@ -181,11 +181,6 @@ def theta_to_phi(theta):
 # ============================================================
 # 4. One-step optimizers
 # ============================================================
-# gd_step_phi is the plain baseline update. natural_step_phi applies a
-# fixed-lengthscale local preconditioner in phi-space, and pgd_step_phi
-# uses the same solve inside the adaptive-lengthscale PGD method. All three
-# return diagnostics so we can inspect gradients, parameter movement, and
-# Jacobian sensitivity.
 @partial(jax.jit, static_argnums=(2,))
 def eval_loss_full(theta, key_eval, n_eval_model, y_obs_full, ell_t):
     _, x_eval = sample_gk(key_eval, theta, n_eval_model)
@@ -633,6 +628,8 @@ def run_baseline_and_adaptive(
 ):
     theta_true = jnp.array(theta_true, dtype=jnp.float64)
     y_obs_full, theta0 = make_target_and_init(seed, theta_true, n_obs_full, theta0=theta0)
+    gamma_natural_sgd = gamma_sgd if gamma_natural_sgd is None else gamma_natural_sgd
+    natural_damping = lambda_scale if natural_damping is None else natural_damping
 
     result = {}
 
@@ -706,44 +703,7 @@ def run_baseline_and_adaptive(
             }
         )
 
-    print("\n=== Adaptive PGD run ===")
-    adaptive_start = time.perf_counter()
-    adaptive_res = run_adaptive_pgd(
-        seed=seed,
-        theta0=theta0,
-        y_obs_full=y_obs_full,
-        target_batch_size=target_batch_size,
-        n_model=n_model,
-        n_steps_pgd=n_steps_pgd,
-        gamma_pgd0=gamma_pgd0,
-        lambda_scale=lambda_scale,
-        ell0=ell0,
-        ell_min=ell_min,
-        decay=decay,
-        ell_eval=ell_min,
-        n_eval_model=n_eval_model,
-        print_every=20,
-        history_every=history_every,
-    )
-    adaptive_elapsed_seconds = time.perf_counter() - adaptive_start
-
-    result.update(
-        {
-            "adaptive_theta_final": adaptive_res["theta_final"],
-            "adaptive_train_loss_final": adaptive_res["train_loss_final"],
-            "adaptive_eval_loss_final": adaptive_res["eval_loss_final"],
-            "adaptive_history_steps": adaptive_res["history_steps"],
-            "adaptive_train_loss_history": adaptive_res["train_loss_history"],
-            "adaptive_eval_loss_history": adaptive_res["eval_loss_history"],
-            "adaptive_theta_history": adaptive_res["theta_history"],
-            "adaptive_direction_history": adaptive_res["direction_history"],
-            "adaptive_theta_delta_history": adaptive_res["theta_delta_history"],
-            "adaptive_jac_col_norm_history": adaptive_res["jac_col_norm_history"],
-            "adaptive_lhs_history": adaptive_res["lhs_history"],
-            "adaptive_rhs_history": adaptive_res["rhs_history"],
-            "adaptive_elapsed_seconds": np.asarray(adaptive_elapsed_seconds, dtype=np.float64),
-        }
-    )
+   
     return result
 
 
@@ -830,6 +790,8 @@ def run_grid_over_n_model(
         else np.array(theta0, dtype=np.float64)
     )
     theta0_tag = _format_theta_for_filename(theta0_value)
+    gamma_natural_sgd_value = gamma_sgd if gamma_natural_sgd is None else gamma_natural_sgd
+    natural_damping_value = lambda_scale if natural_damping is None else natural_damping
     summary = {}
 
     for n_model in n_models:
