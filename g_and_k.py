@@ -753,6 +753,8 @@ def run_baseline_and_adaptive(
 # This section repeats the one-seed experiment, stacks all histories, saves
 # per-seed arrays, and also saves means/stds for quick plotting.
 def save_results(results, output_path):
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(output_path, **results)
 
 
@@ -776,12 +778,30 @@ def _format_value_for_filename(value):
     return str(value).replace("-", "m").replace(".", "p")
 
 
+def _resolve_theta0_for_seed(seed, seed_index, theta0, theta0_by_seed):
+    if theta0_by_seed is None:
+        return theta0
+
+    if isinstance(theta0_by_seed, dict):
+        if seed not in theta0_by_seed:
+            raise KeyError(f"Missing theta0 for seed {seed}.")
+        return theta0_by_seed[seed]
+
+    theta0_array = np.asarray(theta0_by_seed, dtype=np.float64)
+    if theta0_array.ndim != 2:
+        raise ValueError("theta0_by_seed must be a dict or a 2D array-like of shape (n_seeds, theta_dim).")
+    if seed_index >= theta0_array.shape[0]:
+        raise ValueError("theta0_by_seed has fewer rows than the number of seeds.")
+    return theta0_array[seed_index]
+
+
 def run_grid_over_n_model(
     seeds,
     n_models,
     output_dir,
     theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
     theta0=None,
+    theta0_by_seed=None,
     n_obs_full=500,
     target_batch_size=200,
     n_steps_sgd=5000,
@@ -802,6 +822,7 @@ def run_grid_over_n_model(
 ):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    seeds = list(seeds)
 
     theta0_value = (
         np.array([2.0, 2.0, 1.5, -0.3], dtype=np.float64)
@@ -813,12 +834,23 @@ def run_grid_over_n_model(
 
     for n_model in n_models:
         per_seed = []
-        for seed in seeds:
+        theta0_per_seed = []
+        for seed_index, seed in enumerate(seeds):
+            theta0_seed = np.asarray(
+                _resolve_theta0_for_seed(
+                    seed=seed,
+                    seed_index=seed_index,
+                    theta0=theta0_value,
+                    theta0_by_seed=theta0_by_seed,
+                ),
+                dtype=np.float64,
+            )
+            theta0_per_seed.append(theta0_seed)
             per_seed.append(
                 run_baseline_and_adaptive(
                     seed=seed,
                     theta_true=theta_true,
-                    theta0=theta0_value,
+                    theta0=theta0_seed,
                     n_obs_full=n_obs_full,
                     target_batch_size=target_batch_size,
                     n_model=n_model,
@@ -861,6 +893,7 @@ def run_grid_over_n_model(
             "n_model": np.array(n_model, dtype=np.int32),
             "theta_true": np.array(theta_true, dtype=np.float64),
             "theta0": theta0_value,
+            "theta0_per_seed": _stack(theta0_per_seed),
             "n_obs_full": np.array(n_obs_full, dtype=np.int32),
             "target_batch_size": np.array(target_batch_size, dtype=np.int32),
             "n_steps_sgd": np.array(n_steps_sgd, dtype=np.int32),
@@ -912,6 +945,7 @@ def run_grid_over_n_model(
             "last_adapt_rhs": adaptive_rhs_histories[-1],
             "run_baseline": np.array(run_baseline, dtype=np.bool_),
             "run_natural": np.array(run_natural, dtype=np.bool_),
+            "uses_theta0_by_seed": np.array(theta0_by_seed is not None, dtype=np.bool_),
         }
 
         if run_baseline:
@@ -1038,6 +1072,7 @@ def run_for_n_model(
     output_dir,
     theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
     theta0=None,
+    theta0_by_seed=None,
     n_obs_full=500,
     target_batch_size=200,
     n_steps_sgd=5000,
@@ -1061,6 +1096,7 @@ def run_for_n_model(
         n_models=[n_model],
         output_dir=output_dir,
         theta0=theta0,
+        theta0_by_seed=theta0_by_seed,
         theta_true=theta_true,
         n_obs_full=n_obs_full,
         target_batch_size=target_batch_size,
@@ -1306,14 +1342,21 @@ if __name__ == "__main__":
 
     lengthscale_param="ell_min",
     lengthscale_values=[0.1, 0.3, 1.0, 3.0, 10.0],
-    lambda_scales=[1e-4, 1e-2, 1e-0],
+    lambda_scales=[1e-0],
+    theta0_by_seed=np.array([
+        [3.5, 2.0, 0.6, -0.8],
+        [3.4, 1.9, 0.7, -0.75],
+        [2.0, 2.1, 0.5, -0.85],
+        [2.0, 2.0, 1.3, -0.6],
+        [3.7, 1.8, 0.6, -0.9],
+    ], dtype=np.float64),
 
     ell0=10.0,          # fixed
     decay=0.99,
     gamma_pgd0=0.1,
-
+    
     theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-    theta0=np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64),
+    # theta0=np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64),
     n_obs_full=1000,
     target_batch_size=200,
     n_steps_sgd=3000,

@@ -890,6 +890,180 @@ def make_lv_lengthscale_lambda_heatmap(
 
         return _save_figure(fig, output_path, bbox_inches="tight")
 
+
+def _parse_heatmap_float(value):
+    return float(value.replace("p", "."))
+
+
+def _draw_theta_error_heatmap(error_grid, ell_values, lambda_values, output_path):
+    plot_rc = {
+        **LOCAL_PLOT_RC,
+        "font.family": "STIXGeneral",
+        "mathtext.fontset": "stix",
+    }
+
+    masked_grid = np.ma.masked_invalid(error_grid)
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad(color="lightgray")
+
+    figure_height = 5.0 if len(lambda_values) > 1 else 2.8
+    with plt.rc_context(plot_rc):
+        fig, ax = plt.subplots(figsize=(8.0, figure_height), dpi=SUMMARY_DPI)
+        im = ax.imshow(masked_grid, cmap=cmap, aspect="auto")
+
+        ax.set_xticks(np.arange(len(ell_values)))
+        ax.set_yticks(np.arange(len(lambda_values)))
+        ax.set_xticklabels([f"{ell:g}" for ell in ell_values])
+        ax.set_yticklabels([f"{lam:g}" for lam in lambda_values])
+        ax.set_xlabel(r"$\ell_{\infty}$", fontsize=26)
+        ax.set_ylabel(r"$\lambda$", fontsize=26)
+        ax.grid(False)
+        ax.tick_params(axis="both", labelsize=20)
+
+        for i in range(error_grid.shape[0]):
+            for j in range(error_grid.shape[1]):
+                if np.isfinite(error_grid[i, j]):
+                    ax.text(
+                        j,
+                        i,
+                        f"{error_grid[i, j]:.2e}",
+                        ha="center",
+                        va="center",
+                        color="white",
+                        fontsize=11,
+                    )
+
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label(
+            r"$\|\bar{\theta}_{final} - \theta_{true}\|_2$",
+            fontsize=18,
+            rotation=270,
+            labelpad=35,
+        )
+        cbar.ax.tick_params(labelsize=14)
+
+        fig.tight_layout()
+        return _save_figure(fig, output_path, bbox_inches="tight")
+
+
+def make_lv_theta_error_heatmap(results_dir, lambdas=None, output_path=None):
+    """Render LV cells as ||mean(theta_final) - theta_true||_2."""
+    results_dir = Path(results_dir)
+    filename_pattern = re.compile(
+        r"lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_"
+        r"(?P<ell>[^_]+)_lambda_(?P<lam>[^_]+)\.npz$"
+    )
+
+    lambda_set = None if lambdas is None else {float(v) for v in lambdas}
+    error_by_cell = {}
+    ell_values = set()
+    lambda_values = set()
+
+    file_pattern = (
+        "lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_*_lambda_*.npz"
+    )
+    for npz_path in sorted(results_dir.glob(file_pattern)):
+        match = filename_pattern.match(npz_path.name)
+        if match is None:
+            continue
+
+        ell = _parse_heatmap_float(match.group("ell"))
+        lam = _parse_heatmap_float(match.group("lam"))
+        if lambda_set is not None and lam not in lambda_set:
+            continue
+
+        data = _load_npz_dict(npz_path)
+        theta_true = np.asarray(data["theta_true"], dtype=float)
+        theta_final = np.asarray(data["pgd_theta_mean"], dtype=float)
+        theta_error = float(np.linalg.norm(theta_final - theta_true))
+
+        error_by_cell[(lam, ell)] = theta_error
+        ell_values.add(ell)
+        lambda_values.add(lam)
+
+    if not error_by_cell:
+        raise ValueError(f"No matching LV theta files found in {results_dir}.")
+
+    sorted_ells = np.asarray(sorted(ell_values), dtype=float)
+    sorted_lambdas = (
+        np.asarray(list(lambdas), dtype=float)
+        if lambdas is not None
+        else np.asarray(sorted(lambda_values), dtype=float)
+    )
+    error_grid = np.full((len(sorted_lambdas), len(sorted_ells)), np.nan, dtype=float)
+
+    for i, lam in enumerate(sorted_lambdas):
+        for j, ell in enumerate(sorted_ells):
+            key = (float(lam), float(ell))
+            if key in error_by_cell:
+                error_grid[i, j] = error_by_cell[key]
+
+    return _draw_theta_error_heatmap(
+        error_grid,
+        sorted_ells,
+        sorted_lambdas,
+        output_path,
+    )
+
+
+def make_gk_theta_error_heatmap(results_dir, lambdas=None, output_path=None):
+    """Render G-and-K cells as ||mean(theta_final) - theta_true||_2."""
+    results_dir = Path(results_dir)
+    dirname_pattern = re.compile(
+        r"g_and_k_lengthscale_regularization_grid_ell_min_"
+        r"(?P<ell>[^_]+)_lambda_(?P<lam>[^/]+)$"
+    )
+
+    lambda_set = None if lambdas is None else {float(v) for v in lambdas}
+    error_by_cell = {}
+    ell_values = set()
+    lambda_values = set()
+
+    for npz_path in sorted(results_dir.rglob("*.npz")):
+        relative_parent = npz_path.parent.relative_to(results_dir).as_posix()
+        match = dirname_pattern.match(relative_parent)
+        if match is None:
+            continue
+
+        ell = _parse_heatmap_float(match.group("ell"))
+        lam = _parse_heatmap_float(match.group("lam"))
+        if lambda_set is not None and lam not in lambda_set:
+            continue
+
+        data = _load_npz_dict(npz_path)
+        theta_true = np.asarray(data["theta_true"], dtype=float)
+        theta_final = np.asarray(data["adaptive_theta_mean"], dtype=float)
+        theta_error = float(np.linalg.norm(theta_final - theta_true))
+
+        error_by_cell[(lam, ell)] = theta_error
+        ell_values.add(ell)
+        lambda_values.add(lam)
+
+    if not error_by_cell:
+        raise ValueError(f"No matching G-and-K theta files found in {results_dir}.")
+
+    sorted_ells = np.asarray(sorted(ell_values), dtype=float)
+    sorted_lambdas = (
+        np.asarray(list(lambdas), dtype=float)
+        if lambdas is not None
+        else np.asarray(sorted(lambda_values), dtype=float)
+    )
+    error_grid = np.full((len(sorted_lambdas), len(sorted_ells)), np.nan, dtype=float)
+
+    for i, lam in enumerate(sorted_lambdas):
+        for j, ell in enumerate(sorted_ells):
+            key = (float(lam), float(ell))
+            if key in error_by_cell:
+                error_grid[i, j] = error_by_cell[key]
+
+    return _draw_theta_error_heatmap(
+        error_grid,
+        sorted_ells,
+        sorted_lambdas,
+        output_path,
+    )
+
+
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent
     figures_dir = root / "ab"
