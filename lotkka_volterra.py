@@ -374,6 +374,7 @@ def run_pgd(
     scale_mean,
     scale_std,
     n_model=50,
+    target_batch_size=100,
     n_steps=500,
     gamma=1e-2,
     lambda_scale=1e-3,
@@ -402,14 +403,15 @@ def run_pgd(
     last_eval_loss = None
 
     for t in range(n_steps):
-        key, key_model, key_eval = jax.random.split(key, 3)
+        key, key_batch, key_model, key_eval = jax.random.split(key, 4)
+        y_batch = _sample_target_batch(key_batch, y_obs_full, target_batch_size)
         ell_t = float(ell_schedule[t])
         gamma_t = jnp.asarray(gamma, dtype=jnp.float64)
         lambda_t = jnp.asarray(lambda_scale, dtype=jnp.float64)
         phi, train_loss, direction, theta_delta = pgd_step_phi(
             phi,
             key_model,
-            y_obs_full,
+            y_batch,
             n_model,
             num_steps,
             jnp.asarray(T, dtype=jnp.float64),
@@ -638,6 +640,7 @@ def run_one_seed(
         scale_mean=scale_mean,
         scale_std=scale_std,
         n_model=n_model,
+        target_batch_size=target_batch_size,
         n_steps=pgd_n_steps,
         gamma=pgd_gamma,
         lambda_scale=pgd_lambda_scale,
@@ -986,64 +989,64 @@ if __name__ == "__main__":
     sgd_gamma = 100
     pgd_gamma = 100
     pgd_lambda_scale = 1e-3
-    sgd_n_steps = 10000
-    pgd_n_steps = 20000
-    theta0_by_seed = np.tile(np.array([90.0, 90.0], dtype=np.float64), (10, 1))
+    sgd_n_steps = 12000
+    pgd_n_steps = 12000
+    theta0_by_seed = np.tile(np.array([60.0, 60.0], dtype=np.float64), (10, 1))
 
-    # result = run_experiment(
-    #     seeds=range(10),
-    #     output_path="lotka_volterra_results_90_90.npz",
-    #     corruption=0.0,
-    #     n_steps=max(sgd_n_steps, pgd_n_steps),
-    #     sgd_n_steps=sgd_n_steps,
-    #     pgd_n_steps=pgd_n_steps,
-    #     theta0_by_seed=theta0_by_seed,
-    #     num_steps=50,
-    #     standardize=standardize,
-    #     ell_fixed=ell_fixed,
-    #     ell_eval=ell_eval,
-    #     pgd_ell0=pgd_ell0,
-    #     pgd_ell_min=pgd_ell_min,
-    #     pgd_decay=pgd_decay,
-    #     run_plain_sgd=True,
-    #     sgd_gamma=sgd_gamma,
-    #     pgd_gamma=pgd_gamma,
-    #     pgd_lambda_scale=pgd_lambda_scale,
-    #     print_kernel_diagnostics=True,
-    #     history_every=1,
-    #     print_every=100,
-    # )
-    # print("SGD MMD theta mean:", result["sgd_theta_mean"])
-    # print("PGD theta mean:", result["pgd_theta_mean"])
-
-    summary = run_lengthscale_regularization_grid(
-        output_dir="ablations/lv_heatmap",
-        lengthscale_param="pgd_ell_min",
-        lengthscale_values=[10, 30, 100, 300],
-        lambda_scales=[1e-4, 1e-2, 1e-0],
-
-        pgd_ell0=1000.0,   # fixed here
-        pgd_decay=0.9995,
-        pgd_gamma=100,
-        ell_fixed=30.0,
-        ell_eval=30.0,
-        corruption=0.0,
-        theta0_by_seed=np.array(
-            [
-                [50.0, 60.0],
-                [90.0, 90.0],
-                [75.0, 75.0],
-                [55.0, 55.0],
-                [60.0, 60.0],
-            ],
-            dtype=np.float64,
-        ),
-        m_obs=100,
-        n_model=50,
-        sgd_n_steps=12000,
-        pgd_n_steps=15000,
+    result = run_experiment(
+        seeds=range(10),
+        output_path="lotka_volterra_results_60_60_12000_c35.npz",
+        corruption=0.35,
+        n_steps=max(sgd_n_steps, pgd_n_steps),
+        sgd_n_steps=sgd_n_steps,
+        pgd_n_steps=pgd_n_steps,
+        theta0_by_seed=theta0_by_seed,
         num_steps=50,
-        T=1.0,
-        standardize=False,
-        seeds=range(5),
+        standardize=standardize,
+        ell_fixed=ell_fixed,
+        ell_eval=ell_eval,
+        pgd_ell0=pgd_ell0,
+        pgd_ell_min=pgd_ell_min,
+        pgd_decay=pgd_decay,
+        run_plain_sgd=True,
+        sgd_gamma=sgd_gamma,
+        pgd_gamma=pgd_gamma,
+        pgd_lambda_scale=pgd_lambda_scale,
+        print_kernel_diagnostics=True,
+        history_every=1,
+        print_every=100,
     )
+    print("SGD MMD theta mean:", result["sgd_theta_mean"])
+    print("PGD theta mean:", result["pgd_theta_mean"])
+
+    # summary = run_lengthscale_regularization_grid(
+    #     output_dir="ablations/lv_heatmap",
+    #     lengthscale_param="pgd_ell_min",
+    #     lengthscale_values=[10, 30, 100, 300],
+    #     lambda_scales=[1e-4, 1e-2, 1e-0],
+
+    #     pgd_ell0=1000.0,   # fixed here
+    #     pgd_decay=0.9995,
+    #     pgd_gamma=100,
+    #     ell_fixed=30.0,
+    #     ell_eval=30.0,
+    #     corruption=0.0,
+    #     theta0_by_seed=np.array(
+    #         [
+    #             [50.0, 60.0],
+    #             [90.0, 90.0],
+    #             [75.0, 75.0],
+    #             [55.0, 55.0],
+    #             [60.0, 60.0],
+    #         ],
+    #         dtype=np.float64,
+    #     ),
+    #     m_obs=100,
+    #     n_model=50,
+    #     sgd_n_steps=12000,
+    #     pgd_n_steps=15000,
+    #     num_steps=50,
+    #     T=1.0,
+    #     standardize=False,
+    #     seeds=range(5),
+    # )

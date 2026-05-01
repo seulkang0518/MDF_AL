@@ -487,7 +487,6 @@ def run_adaptive_pgd(
     print_every=20,
     history_every=1,
 ):
-    del target_batch_size
     key = jax.random.PRNGKey(seed + 2000)
     phi = theta_to_phi(theta0)
 
@@ -506,8 +505,17 @@ def run_adaptive_pgd(
     ell_schedule = make_adaptive_ell_schedule(n_steps_pgd, ell0, ell_min, decay)
 
     for t in range(n_steps_pgd):
-        key, key_model, key_eval = jax.random.split(key, 3)
-        y_batch = y_obs_full
+        key, key_batch, key_model, key_eval = jax.random.split(key, 4)
+        if target_batch_size is None or target_batch_size >= y_obs_full.shape[0]:
+            y_batch = y_obs_full
+        else:
+            idx = jax.random.randint(
+                key_batch,
+                shape=(target_batch_size,),
+                minval=0,
+                maxval=y_obs_full.shape[0],
+            )
+            y_batch = y_obs_full[idx]
 
         ell_t = jnp.asarray(ell_schedule[t], dtype=jnp.float64)
         ell_eval_t = jnp.asarray(ell_eval, dtype=jnp.float64)
@@ -534,13 +542,6 @@ def run_adaptive_pgd(
                 y_obs_full=y_obs_full,
                 ell_t=ell_eval_t,
             )
-            _, x_diag = sample_gk(key_eval, theta, n_model)
-            lhs, rhs = lhs_rhs_values_gk(
-                x_model=x_diag,
-                y_target=y_obs_full,
-                ell_t=ell_t,
-                ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
-            )
             last_eval_loss = eval_loss
             history_steps.append(t)
             train_loss_history.append(float(train_loss))
@@ -549,21 +550,32 @@ def run_adaptive_pgd(
             direction_history.append(np.array(direction, dtype=np.float64))
             theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
             jac_col_norm_history.append(np.array(jac_col_norms, dtype=np.float64))
-            lhs_history.append(float(lhs))
-            rhs_history.append(float(rhs))
+            # Optional diagnostics, disabled for fairer runtime comparisons:
+            # _, x_diag = sample_gk(key_eval, theta, n_model)
+            # lhs, rhs = lhs_rhs_values_gk(
+            #     x_model=x_diag,
+            #     y_target=y_obs_full,
+            #     ell_t=ell_t,
+            #     ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
+            # )
+            # lhs_history.append(float(lhs))
+            # rhs_history.append(float(rhs))
+            # lhs_history.append(np.nan)
+            # rhs_history.append(np.nan)
 
         if (t % print_every == 0) or (t == n_steps_pgd - 1):
-            theta = phi_to_theta(phi)
-            _, x_diag = sample_gk(key_eval, theta, n_model)
-            lhs, rhs = lhs_rhs_values_gk(
-                x_model=x_diag,
-                y_target=y_obs_full,
-                ell_t=ell_t,
-                ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
-            )
-            ratio = float(lhs) / float(rhs) if float(rhs) != 0.0 else np.inf
-
+            # Optional diagnostics, disabled for fairer runtime comparisons:
+            # theta = phi_to_theta(phi)
+            # _, x_diag = sample_gk(key_eval, theta, n_model)
+            # lhs, rhs = lhs_rhs_values_gk(
+            #     x_model=x_diag,
+            #     y_target=y_obs_full,
+            #     ell_t=ell_t,
+            #     ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
+            # )
+            # ratio = float(lhs) / float(rhs) if float(rhs) != 0.0 else np.inf
             if last_eval_loss is None:
+                theta = phi_to_theta(phi)
                 last_eval_loss = eval_loss_full(
                     theta=theta,
                     key_eval=key_eval,
@@ -576,9 +588,9 @@ def run_adaptive_pgd(
                 f"[PGD] step={t:4d} | ell={float(ell_t):.4f} | "
                 f"gamma={float(gamma_t):.6f} | lambda={float(lambda_t):.6f} | "
                 f"train_loss={float(train_loss):.8f} | "
-                f"eval_loss={float(last_eval_loss):.8f} | "
-                f"lhs={float(lhs):.6e} | rhs={float(rhs):.6e} | "
-                f"lhs/rhs={ratio:.6e}"
+                f"eval_loss={float(last_eval_loss):.8f}"
+                # f" | lhs={float(lhs):.6e} | rhs={float(rhs):.6e} | "
+                # f"lhs/rhs={ratio:.6e}"
             )
 
     return {
@@ -703,7 +715,44 @@ def run_baseline_and_adaptive(
             }
         )
 
-   
+    print("\n=== Adaptive PGD (shrinking lengthscale with local preconditioning) ===")
+    adaptive_start = time.perf_counter()
+    adaptive_res = run_adaptive_pgd(
+        seed=seed,
+        theta0=theta0,
+        y_obs_full=y_obs_full,
+        target_batch_size=target_batch_size,
+        n_model=n_model,
+        n_steps_pgd=n_steps_pgd,
+        gamma_pgd0=gamma_pgd0,
+        lambda_scale=lambda_scale,
+        ell0=ell0,
+        ell_min=ell_min,
+        decay=decay,
+        ell_eval=ell_min,
+        n_eval_model=n_eval_model,
+        print_every=20,
+        history_every=history_every,
+    )
+    adaptive_elapsed_seconds = time.perf_counter() - adaptive_start
+    result.update(
+        {
+            "adaptive_theta_final": adaptive_res["theta_final"],
+            "adaptive_train_loss_final": adaptive_res["train_loss_final"],
+            "adaptive_eval_loss_final": adaptive_res["eval_loss_final"],
+            "adaptive_history_steps": adaptive_res["history_steps"],
+            "adaptive_train_loss_history": adaptive_res["train_loss_history"],
+            "adaptive_eval_loss_history": adaptive_res["eval_loss_history"],
+            "adaptive_theta_history": adaptive_res["theta_history"],
+            "adaptive_direction_history": adaptive_res["direction_history"],
+            "adaptive_theta_delta_history": adaptive_res["theta_delta_history"],
+            "adaptive_jac_col_norm_history": adaptive_res["jac_col_norm_history"],
+            "adaptive_lhs_history": adaptive_res["lhs_history"],
+            "adaptive_rhs_history": adaptive_res["rhs_history"],
+            "adaptive_elapsed_seconds": np.asarray(adaptive_elapsed_seconds, dtype=np.float64),
+        }
+    )
+
     return result
 
 
@@ -1265,64 +1314,64 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    # result = run_for_n_model(
-    #     n_model=600,
-    #     seeds=range(10),  # Add 1,2,... here for multi-seed runs. ,1,2,3,4,5,6,7,8,9
-    #     output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL",
-    #     theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-    #     theta0=np.array([3.5,2.0,0.6,-0.8], dtype=np.float64),
-    #     n_obs_full=1000,
-    #     target_batch_size=200,
-    #     n_steps_sgd=3000,
-    #     n_steps_pgd=3000,
-    #     gamma_sgd=0.1,
-    #     gamma_natural_sgd=0.1,
-    #     gamma_pgd0=0.1,
-    #     lambda_scale=1e-3,
-    #     natural_damping=1e-3,
-    #     n_eval_model=2000,
-    #     ell_fixed=2.0,
-    #     ell0=10.0,
-    #     ell_min=2.0,
-    #     decay=0.99,
-    # )
+    result = run_for_n_model(
+        n_model=600,
+        seeds=range(10),  # Add 1,2,... here for multi-seed runs. ,1,2,3,4,5,6,7,8,9
+        output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL",
+        theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
+        theta0=np.array([3.5,2.0,0.6,-0.8], dtype=np.float64),
+        n_obs_full=1000,
+        target_batch_size=600,
+        n_steps_sgd=100, #[1000, 3000]
+        n_steps_pgd=100, #[1000, 3000] 
+        gamma_sgd=0.1,
+        gamma_natural_sgd=0.1,
+        gamma_pgd0=0.1,
+        lambda_scale=1e-3,
+        natural_damping=1e-3,
+        n_eval_model=2000,
+        ell_fixed=2.0,
+        ell0=10.0,
+        ell_min=2.0,
+        decay=0.99,
+    )
 
-    # print("\nSaved results")
-    # print(f"baseline_eval_mean={result['baseline_eval_mean']:.8f}")
-    # print(f"natural_eval_mean={result['natural_eval_mean']:.8f}")
-    # print(f"adaptive_eval_mean={result['adaptive_eval_mean']:.8f}")
-    # print(f"baseline_theta_mean={np.array(result['baseline_theta_mean'])}")
-    # print(f"natural_theta_mean={np.array(result['natural_theta_mean'])}")
-    # print(f"adaptive_theta_mean={np.array(result['adaptive_theta_mean'])}")
-    # print(f"file={result['output_path']}")
+    print("\nSaved results")
+    print(f"baseline_eval_mean={result['baseline_eval_mean']:.8f}")
+    print(f"natural_eval_mean={result['natural_eval_mean']:.8f}")
+    print(f"adaptive_eval_mean={result['adaptive_eval_mean']:.8f}")
+    print(f"baseline_theta_mean={np.array(result['baseline_theta_mean'])}")
+    print(f"natural_theta_mean={np.array(result['natural_theta_mean'])}")
+    print(f"adaptive_theta_mean={np.array(result['adaptive_theta_mean'])}")
+    print(f"file={result['output_path']}")
 
 
-    summary = run_lengthscale_regularization_grid_for_n_model(
-    n_model=600,
-    seeds=range(5),
-    output_dir="ablations/gk_heatmap",
+#     summary = run_lengthscale_regularization_grid_for_n_model(
+#     n_model=600,
+#     seeds=range(5),
+#     output_dir="ablations/gk_heatmap",
 
-    lengthscale_param="ell_min",
-    lengthscale_values=[0.1, 0.3, 1.0, 3.0, 10.0],
-    lambda_scales=[1e-0],
-    theta0_by_seed=np.array([
-        [3.5, 2.0, 0.6, -0.8],
-        [3.4, 1.9, 0.7, -0.75],
-        [2.0, 2.1, 0.5, -0.85],
-        [2.0, 2.0, 1.3, -0.6],
-        [3.7, 1.8, 0.6, -0.9],
-    ], dtype=np.float64),
+#     lengthscale_param="ell_min",
+#     lengthscale_values=[0.1, 0.3, 1.0, 3.0, 10.0],
+#     lambda_scales=[1e-0],
+#     theta0_by_seed=np.array([
+#         [3.5, 2.0, 0.6, -0.8],
+#         [3.4, 1.9, 0.7, -0.75],
+#         [2.0, 2.1, 0.5, -0.85],
+#         [2.0, 2.0, 1.3, -0.6],
+#         [3.7, 1.8, 0.6, -0.9],
+#     ], dtype=np.float64),
 
-    ell0=10.0,          # fixed
-    decay=0.99,
-    gamma_pgd0=0.1,
+#     ell0=10.0,          # fixed
+#     decay=0.99,
+#     gamma_pgd0=0.1,
     
-    theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-    # theta0=np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64),
-    n_obs_full=1000,
-    target_batch_size=200,
-    n_steps_sgd=3000,
-    n_steps_pgd=3000,
-    gamma_sgd=0.1,
-    ell_fixed=2.0,
-)
+#     theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
+#     # theta0=np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64),
+#     n_obs_full=1000,
+#     target_batch_size=200,
+#     n_steps_sgd=3000,
+#     n_steps_pgd=3000,
+#     gamma_sgd=0.1,
+#     ell_fixed=2.0,
+# )
