@@ -76,6 +76,104 @@ FOUR_PANEL_RC = {
 }
 plt.rcParams.update(BASE_PLOT_RC)
 
+NOTEBOOK_STYLE_PROFILES = {
+    "mmd_flow": {
+        "summary_figsize": (24, 4.8),
+        "summary_dpi": 150,
+        "title_size": 24,
+        "label_size": 38,
+        "tick_size": 38,
+        "legend_size": 36,
+        "marker_size": 7,
+        "comparison_scatter_size": 28,
+        "line_width": 3.0,
+        "title_pad": 5,
+        "inline_legend_size": 18,
+        "four_panel_legend_size": 32,
+    },
+    "gnk": {
+        "summary_figsize": (24, 4.8),
+        "summary_dpi": 150,
+        "title_size": 32,
+        "label_size": 32,
+        "tick_size": 25,
+        "legend_size": 32,
+        "marker_size": 5,
+        "comparison_scatter_size": 28,
+        "line_width": 2.0,
+        "title_pad": 8,
+        "inline_legend_size": 18,
+        "four_panel_legend_size": 32,
+    },
+    "lv": {
+        "summary_figsize": (30, 6.5),
+        "summary_dpi": 150,
+        "title_size": 24,
+        "label_size": 40,
+        "tick_size": 30,
+        "legend_size": 40,
+        "marker_size": 60,
+        "comparison_scatter_size": 28,
+        "line_width": 2.0,
+        "title_pad": 8,
+        "inline_legend_size": 18,
+        "four_panel_legend_size": 32,
+    },
+}
+
+
+def _set_plot_style(profile_name):
+    global SUMMARY_FIGSIZE, SUMMARY_DPI, TITLE_SIZE, LABEL_SIZE, TICK_SIZE
+    global LEGEND_SIZE, MARKER_SIZE, COMPARISON_SCATTER_SIZE, LINE_WIDTH
+    global TITLE_PAD, INLINE_LEGEND_SIZE, FOUR_PANEL_LEGEND_SIZE
+    global BASE_PLOT_RC, LOCAL_PLOT_RC, FOUR_PANEL_RC
+
+    profile = NOTEBOOK_STYLE_PROFILES[profile_name]
+    SUMMARY_FIGSIZE = profile["summary_figsize"]
+    SUMMARY_DPI = profile["summary_dpi"]
+    TITLE_SIZE = profile["title_size"]
+    LABEL_SIZE = profile["label_size"]
+    TICK_SIZE = profile["tick_size"]
+    LEGEND_SIZE = profile["legend_size"]
+    MARKER_SIZE = profile["marker_size"]
+    COMPARISON_SCATTER_SIZE = profile["comparison_scatter_size"]
+    LINE_WIDTH = profile["line_width"]
+    TITLE_PAD = profile["title_pad"]
+    INLINE_LEGEND_SIZE = profile["inline_legend_size"]
+    FOUR_PANEL_LEGEND_SIZE = profile["four_panel_legend_size"]
+
+    BASE_PLOT_RC = {
+        "axes.grid": True,
+        "font.family": "DejaVu Serif",
+        "font.serif": ["Times New Roman"],
+        "text.usetex": True,
+        "text.latex.preamble": r"\usepackage{amsmath, amsfonts, mathrsfs, amssymb}",
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "axes.titlesize": TITLE_SIZE,
+        "axes.labelsize": LABEL_SIZE,
+        "legend.fontsize": LEGEND_SIZE,
+        "legend.frameon": False,
+        "xtick.labelsize": TICK_SIZE,
+        "ytick.labelsize": TICK_SIZE,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "lines.linewidth": LINE_WIDTH,
+        "lines.markersize": MARKER_SIZE,
+        "figure.figsize": FIGSIZE,
+        "figure.dpi": DPI,
+    }
+    LOCAL_PLOT_RC = dict(BASE_PLOT_RC)
+    FOUR_PANEL_RC = {
+        **LOCAL_PLOT_RC,
+        "axes.labelsize": 22,
+        "xtick.labelsize": 22,
+        "ytick.labelsize": 22,
+        "legend.fontsize": 14,
+        "lines.markersize": 3.5,
+    }
+    plt.rcParams.update(BASE_PLOT_RC)
+
 
 # Shared helpers
 def _load_npz_dict(npz_path):
@@ -1534,6 +1632,7 @@ def _run_if_inputs_exist(label, input_paths, output_path, plotter):
 
 
 def run_mmd_flow(root, figures_dir):
+    _set_plot_style("mmd_flow")
     nonparametric_dir = root / "results" / "nonparametric"
     mmd_comparison_npz = nonparametric_dir / "results_n100f.npz"
     mmd_vs_n_npz_paths = [
@@ -1562,6 +1661,7 @@ def run_mmd_flow(root, figures_dir):
 
 
 def run_gnk(root, figures_dir):
+    _set_plot_style("gnk")
     gnk_dir = root / "results" / "gnk"
     gk_mmd_npz = gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800.npz"
     gk_trajectory_npz_paths = [
@@ -1612,6 +1712,7 @@ def run_gnk(root, figures_dir):
 
 
 def run_lv(root, figures_dir):
+    _set_plot_style("lv")
     lv_dir = root / "results" / "lv"
     lv_clean_npz_paths = [
         lv_dir / "lv_results_50_60.npz",
