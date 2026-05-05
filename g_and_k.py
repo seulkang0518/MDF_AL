@@ -1720,7 +1720,7 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "single_run"
+    experiment_mode = "decay_ablation"
 
     single_run_theta0_by_seed = np.array(
         [
@@ -1766,7 +1766,7 @@ if __name__ == "__main__":
         ),
         n_obs_full=1000,
         target_batch_size=200,
-        n_steps_sgd=3000,
+        n_steps_sgd=1,
         n_steps_pgd=3000,
         gamma_sgd=0.1,
         gamma_natural_sgd=0.1,
@@ -1787,7 +1787,7 @@ if __name__ == "__main__":
     lengthscale_grid_values = [0.1, 0.3, 1.0, 3.0, 10.0]
     secondary_lengthscale_grid_param = "ell0"
     secondary_lengthscale_grid_values = [2.0, 5.0, 10.0, 20.0]
-    decay_sweep_values = [0.8, 0.9, 0.95]
+    decay_sweep_values = [0.5]
 
     if experiment_mode == "single_run":
         result = run_for_n_model(
@@ -1811,7 +1811,7 @@ if __name__ == "__main__":
             n_model=600,
             seeds=range(5),
             output_dir="ablations/gk_gamma",
-            gamma_values=[100],#step_size_ablation
+            gamma_values=[10],#step_size_ablation
             sweep_param="gamma_pgd0",
             **ablation_kwargs,
         )

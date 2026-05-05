@@ -538,9 +538,12 @@ def run_one_seed(
     history_every=100,
     print_every=100,
     run_plain_sgd=True,
+    run_natural_sgd=False,
     run_adaptive_sgd=False,
     run_fixed_pgd=False,
     sgd_gamma=1e-2,
+    natural_sgd_gamma=None,
+    natural_damping=None,
     standardize=False,
     scale_eps=1e-6,
     print_kernel_diagnostics=False,
@@ -552,6 +555,8 @@ def run_one_seed(
     theta1 = np.asarray(theta1, dtype=np.float64)
     sgd_n_steps = int(n_steps if sgd_n_steps is None else sgd_n_steps)
     pgd_n_steps = int(n_steps if pgd_n_steps is None else pgd_n_steps)
+    natural_sgd_gamma = sgd_gamma if natural_sgd_gamma is None else natural_sgd_gamma
+    natural_damping = pgd_lambda_scale if natural_damping is None else natural_damping
 
     y_obs_full = make_observed_data(
         seed=seed,
@@ -645,6 +650,37 @@ def run_one_seed(
         sgd_elapsed_seconds = time.perf_counter() - sgd_start
         result.update(_prefix_result("sgd", sgd_res))
         result["sgd_elapsed_seconds"] = np.asarray(sgd_elapsed_seconds, dtype=np.float64)
+
+    if run_natural_sgd:
+        natural_ell_schedule = np.full((sgd_n_steps,), ell_fixed, dtype=np.float64)
+        natural_sgd_start = time.perf_counter()
+        natural_sgd_res = run_pgd(
+            seed=seed,
+            theta0=theta0,
+            y_obs_full=y_obs_full,
+            scale_mean=scale_mean,
+            scale_std=scale_std,
+            n_model=n_model,
+            target_batch_size=target_batch_size,
+            n_steps=sgd_n_steps,
+            gamma=natural_sgd_gamma,
+            lambda_scale=natural_damping,
+            ell0=pgd_ell0,
+            ell_min=pgd_ell_min,
+            decay=pgd_decay,
+            ell_eval=ell_eval,
+            ell_schedule=natural_ell_schedule,
+            num_steps=num_steps,
+            T=T,
+            theta1=theta1,
+            n_eval_model=n_eval_model,
+            history_every=history_every,
+            print_every=print_every,
+            method_label="LV Natural SGD",
+        )
+        natural_sgd_elapsed_seconds = time.perf_counter() - natural_sgd_start
+        result.update(_prefix_result("natural", natural_sgd_res))
+        result["natural_elapsed_seconds"] = np.asarray(natural_sgd_elapsed_seconds, dtype=np.float64)
 
     if run_adaptive_sgd:
         adaptive_sgd_start = time.perf_counter()
@@ -789,7 +825,7 @@ def run_experiment(
         per_seed.append(run_one_seed(seed=seed, **seed_kwargs))
 
     method_names = []
-    for method in ("sgd", "adaptive_sgd", "pgd", "fixed_pgd"):
+    for method in ("sgd", "natural", "adaptive_sgd", "pgd", "fixed_pgd"):
         if any(f"{method}_theta_final" in res for res in per_seed):
             method_names.append(method)
 
@@ -859,9 +895,18 @@ def run_experiment(
             "pgd_ell_min": np.asarray(kwargs.get("pgd_ell_min", 30.0), dtype=np.float64),
             "pgd_decay": np.asarray(kwargs.get("pgd_decay", 0.995), dtype=np.float64),
             "pgd_gamma": np.asarray(kwargs.get("pgd_gamma", 1e-2), dtype=np.float64),
+            "natural_sgd_gamma": np.asarray(
+                kwargs.get("natural_sgd_gamma", kwargs.get("sgd_gamma", 1e-2)),
+                dtype=np.float64,
+            ),
+            "natural_damping": np.asarray(
+                kwargs.get("natural_damping", kwargs.get("pgd_lambda_scale", 1e-3)),
+                dtype=np.float64,
+            ),
             "scale_eps": np.asarray(kwargs.get("scale_eps", 1e-6), dtype=np.float64),
             "kernel_diag_max_pairs": np.asarray(kwargs.get("kernel_diag_max_pairs", 20000), dtype=np.int32),
             "print_kernel_diagnostics": np.asarray(kwargs.get("print_kernel_diagnostics", False), dtype=np.bool_),
+            "run_natural_sgd": np.asarray(kwargs.get("run_natural_sgd", False), dtype=np.bool_),
             "run_adaptive_sgd": np.asarray(kwargs.get("run_adaptive_sgd", False), dtype=np.bool_),
             "run_fixed_pgd": np.asarray(kwargs.get("run_fixed_pgd", False), dtype=np.bool_),
             "uses_theta0_by_seed": np.asarray(theta0_by_seed is not None, dtype=np.bool_),
@@ -1261,23 +1306,23 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "single_run"
+    experiment_mode = "decay_ablation"
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
-    sgd_n_steps = 30000
-    pgd_n_steps = 50000
-    # single_run_theta0_by_seed = np.tile(np.array([60.0, 60.0], dtype=np.float64), (10, 1))
-    single_run_theta0_by_seed = np.array(
-            [
-                [60.0, 60.0],
-                [90.0, 90.0],
-                [75.0, 75.0],
-                [70.0, 60.0],
-                [50.0, 60.0],
-            ],
-            dtype=np.float64,
-        )
+    sgd_n_steps = 12000
+    pgd_n_steps = 12000
+    single_run_theta0_by_seed = np.tile(np.array([50.0, 60.0], dtype=np.float64), (10, 1))
+    # single_run_theta0_by_seed = np.array(
+    #         [
+    #             [60.0, 60.0],
+    #             [90.0, 90.0],
+    #             [75.0, 75.0],
+    #             [70.0, 60.0],
+    #             [50.0, 60.0],
+    #         ],
+    #         dtype=np.float64,
+    #     )
     single_run_kwargs = dict(
         corruption=0.0,
         num_steps=50,
@@ -1287,12 +1332,15 @@ if __name__ == "__main__":
         pgd_ell0=3000,
         pgd_ell_min=30,
         pgd_decay=0.9995,
-        run_plain_sgd=True,
-        run_adaptive_sgd=True,
-        run_fixed_pgd=True,
-        sgd_gamma=300,
+        run_plain_sgd=False,
+        run_natural_sgd=True,
+        run_adaptive_sgd=False,
+        run_fixed_pgd=False,
+        sgd_gamma=100,
+        natural_sgd_gamma=10000,
         pgd_gamma=300,
         pgd_lambda_scale=1e-3,
+        natural_damping=1e-3,
         print_kernel_diagnostics=True,
         history_every=1,
         print_every=100,
@@ -1308,7 +1356,7 @@ if __name__ == "__main__":
             ],
             dtype=np.float64,
         ),
-        corruption=0.45,
+        corruption=0.0,
         num_steps=50,
         standardize=False,
         ell_fixed=30,
@@ -1316,12 +1364,15 @@ if __name__ == "__main__":
         pgd_ell0=1000,
         pgd_ell_min=30,
         pgd_decay=0.9995,
-        run_plain_sgd=True,
-        run_adaptive_sgd=True,
-        run_fixed_pgd=True,
+        run_plain_sgd=False,
+        run_natural_sgd=False,
+        run_adaptive_sgd=False,
+        run_fixed_pgd=False,
         sgd_gamma=100,
+        natural_sgd_gamma=100,
         pgd_gamma=100,
         pgd_lambda_scale=1e-3,
+        natural_damping=1e-3,
         print_kernel_diagnostics=True,
         history_every=1,
         print_every=100,
@@ -1332,12 +1383,12 @@ if __name__ == "__main__":
     lengthscale_grid_values = [10.0, 30.0, 100.0, 300.0]
     secondary_lengthscale_grid_param = "pgd_ell0"
     secondary_lengthscale_grid_values = [100.0, 300.0, 1000.0, 3000.0]
-    decay_sweep_values = [0.8, 0.9, 0.95]
+    decay_sweep_values = [0.5]
 
     if experiment_mode == "single_run":
         result = run_experiment(
-            seeds=range(5),
-            output_path="lotka_volterra_results_pgd_vs_sgd.npz",
+            seeds=range(10),
+            output_path="results/lv/lv_results_60_60_1.npz",
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,
