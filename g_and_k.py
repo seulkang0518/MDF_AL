@@ -1720,7 +1720,7 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "decay_ablation"
+    experiment_mode = "observation_model_grid"
 
     single_run_theta0_by_seed = np.array(
         [
@@ -1836,7 +1836,7 @@ if __name__ == "__main__":
         result = run_observation_model_grid(
             seeds=range(5),
             n_obs_full_values=[300, 600, 1000],
-            n_model_values=[2],
+            n_model_values=[10, 50],
             output_dir="ablations/gk_mn_grid",
             tie_target_batch_to_n_obs=True,
             **ablation_kwargs,

@@ -262,6 +262,40 @@ def pgd_step_phi(
     return phi_new, train_loss, direction, phi_to_theta(phi_new) - theta2
 
 
+@partial(jax.jit, static_argnums=(3, 4))
+def natural_step_phi(
+    phi,
+    key_model,
+    y_batch,
+    n_model,
+    num_steps,
+    T,
+    theta1,
+    scale_mean,
+    scale_std,
+    ell_t,
+    gamma_t,
+    damping_t,
+):
+    noises = jax.random.normal(key_model, shape=(n_model, num_steps, 3), dtype=jnp.float64)
+    theta2 = phi_to_theta(phi)
+    x_raw = simulate_lv_samples_from_noises(theta2, noises, T=T, theta1=theta1)
+    x_model = (x_raw - scale_mean) / scale_std
+    y_batch = (y_batch - scale_mean) / scale_std
+    grad_f = witness_gradient_empirical(x_model, y_batch, ell_t)
+
+    jac_fun = jax.jacrev(lambda ph, noise: lv_trajectory_flat(phi_to_theta(ph), noise, T, theta1))
+    J_phi = jax.vmap(jac_fun, in_axes=(None, 0))(phi, noises) / scale_std[None, :, None]
+    grad_phi = jnp.einsum("ndp,nd->p", J_phi, grad_f) / n_model
+    fisher_phi = jnp.einsum("ndp,ndq->pq", J_phi, J_phi) / n_model
+    fisher_phi = fisher_phi + damping_t * jnp.eye(phi.shape[0], dtype=phi.dtype)
+    direction = jnp.linalg.solve(fisher_phi, grad_phi)
+
+    phi_new = phi - gamma_t * direction
+    train_loss = mmd2_vstat(x_model, y_batch, ell_t)
+    return phi_new, train_loss, grad_phi, direction, phi_to_theta(phi_new) - theta2
+
+
 # ============================================================
 # 4. Method runners
 # ============================================================
@@ -275,6 +309,16 @@ def _sample_target_batch(key, y_obs_full, target_batch_size):
         maxval=y_obs_full.shape[0],
     )
     return y_obs_full[idx]
+
+
+def _normalize_checkpoint_steps(checkpoint_steps, n_steps):
+    if checkpoint_steps is None:
+        return np.empty((0,), dtype=np.int32)
+    checkpoint_steps = np.asarray(checkpoint_steps, dtype=np.int32).reshape(-1)
+    checkpoint_steps = checkpoint_steps[(checkpoint_steps >= 1) & (checkpoint_steps <= n_steps)]
+    if checkpoint_steps.size == 0:
+        return np.empty((0,), dtype=np.int32)
+    return np.unique(checkpoint_steps)
 
 
 def run_sgd(
@@ -295,20 +339,28 @@ def run_sgd(
     theta1=DEFAULT_THETA1,
     n_eval_model=200,
     history_every=100,
+    checkpoint_steps=None,
     print_every=100,
     method_label="LV SGD",
 ):
     key = jax.random.PRNGKey(seed + 1000)
     phi = theta_to_phi(theta0)
     theta1 = jnp.asarray(theta1, dtype=jnp.float64)
+    checkpoint_steps = _normalize_checkpoint_steps(checkpoint_steps, n_steps)
+    checkpoint_step_set = set(np.asarray(checkpoint_steps, dtype=np.int32).tolist())
     theta_history = []
     eval_loss_history = []
     train_loss_history = []
     history_steps = []
     direction_history = []
     theta_delta_history = []
+    checkpoint_iterations = []
+    checkpoint_elapsed_seconds = []
+    checkpoint_eval_losses = []
+    checkpoint_thetas = []
     last_train_loss = None
     last_eval_loss = None
+    start_time = time.perf_counter()
 
     for t in range(n_steps):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
@@ -329,7 +381,10 @@ def run_sgd(
         )
         last_train_loss = train_loss
 
-        if (t % history_every == 0) or (t == n_steps - 1):
+        iteration = t + 1
+        record_history = (t % history_every == 0) or (t == n_steps - 1)
+        record_checkpoint = iteration in checkpoint_step_set
+        if record_history or record_checkpoint:
             theta = phi_to_theta(phi)
             eval_loss = eval_loss_full(
                 theta,
@@ -344,12 +399,18 @@ def run_sgd(
                 jnp.asarray(ell_eval, dtype=jnp.float64),
             )
             last_eval_loss = eval_loss
-            history_steps.append(t)
-            train_loss_history.append(float(train_loss))
-            eval_loss_history.append(float(eval_loss))
-            theta_history.append(np.array(theta, dtype=np.float64))
-            direction_history.append(np.array(grad_phi, dtype=np.float64))
-            theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
+            if record_history:
+                history_steps.append(t)
+                train_loss_history.append(float(train_loss))
+                eval_loss_history.append(float(eval_loss))
+                theta_history.append(np.array(theta, dtype=np.float64))
+                direction_history.append(np.array(grad_phi, dtype=np.float64))
+                theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
+            if record_checkpoint:
+                checkpoint_iterations.append(iteration)
+                checkpoint_elapsed_seconds.append(time.perf_counter() - start_time)
+                checkpoint_eval_losses.append(float(eval_loss))
+                checkpoint_thetas.append(np.array(theta, dtype=np.float64))
 
         if print_every and ((t % print_every == 0) or (t == n_steps - 1)):
             print(
@@ -357,16 +418,23 @@ def run_sgd(
                 f"train={float(train_loss):.6e} eval={float(last_eval_loss):.6e}"
             )
 
+    elapsed_seconds = time.perf_counter() - start_time
+
     return {
         "theta_final": np.array(phi_to_theta(phi), dtype=np.float64),
         "train_loss_final": float(last_train_loss),
         "eval_loss_final": float(last_eval_loss),
+        "elapsed_seconds": np.asarray(elapsed_seconds, dtype=np.float64),
         "history_steps": np.asarray(history_steps, dtype=np.int32),
         "train_loss_history": np.asarray(train_loss_history, dtype=np.float64),
         "eval_loss_history": np.asarray(eval_loss_history, dtype=np.float64),
         "theta_history": np.asarray(theta_history, dtype=np.float64),
         "direction_history": np.asarray(direction_history, dtype=np.float64),
         "theta_delta_history": np.asarray(theta_delta_history, dtype=np.float64),
+        "checkpoint_iterations": np.asarray(checkpoint_iterations, dtype=np.int32),
+        "checkpoint_elapsed_seconds": np.asarray(checkpoint_elapsed_seconds, dtype=np.float64),
+        "checkpoint_eval_losses": np.asarray(checkpoint_eval_losses, dtype=np.float64),
+        "checkpoint_thetas": np.asarray(checkpoint_thetas, dtype=np.float64),
     }
 
 
@@ -391,6 +459,7 @@ def run_pgd(
     theta1=DEFAULT_THETA1,
     n_eval_model=200,
     history_every=100,
+    checkpoint_steps=None,
     print_every=100,
     method_label="LV PGD",
 ):
@@ -403,14 +472,21 @@ def run_pgd(
         ell_schedule = np.asarray(ell_schedule, dtype=np.float64)
         if ell_schedule.shape[0] != n_steps:
             raise ValueError("ell_schedule must have length n_steps.")
+    checkpoint_steps = _normalize_checkpoint_steps(checkpoint_steps, n_steps)
+    checkpoint_step_set = set(np.asarray(checkpoint_steps, dtype=np.int32).tolist())
     theta_history = []
     eval_loss_history = []
     train_loss_history = []
     history_steps = []
     direction_history = []
     theta_delta_history = []
+    checkpoint_iterations = []
+    checkpoint_elapsed_seconds = []
+    checkpoint_eval_losses = []
+    checkpoint_thetas = []
     last_train_loss = None
     last_eval_loss = None
+    start_time = time.perf_counter()
 
     for t in range(n_steps):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
@@ -434,7 +510,10 @@ def run_pgd(
         )
         last_train_loss = train_loss
 
-        if (t % history_every == 0) or (t == n_steps - 1):
+        iteration = t + 1
+        record_history = (t % history_every == 0) or (t == n_steps - 1)
+        record_checkpoint = iteration in checkpoint_step_set
+        if record_history or record_checkpoint:
             theta = phi_to_theta(phi)
             eval_loss = eval_loss_full(
                 theta,
@@ -449,12 +528,18 @@ def run_pgd(
                 jnp.asarray(ell_eval, dtype=jnp.float64),
             )
             last_eval_loss = eval_loss
-            history_steps.append(t)
-            train_loss_history.append(float(train_loss))
-            eval_loss_history.append(float(eval_loss))
-            theta_history.append(np.array(theta, dtype=np.float64))
-            direction_history.append(np.array(direction, dtype=np.float64))
-            theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
+            if record_history:
+                history_steps.append(t)
+                train_loss_history.append(float(train_loss))
+                eval_loss_history.append(float(eval_loss))
+                theta_history.append(np.array(theta, dtype=np.float64))
+                direction_history.append(np.array(direction, dtype=np.float64))
+                theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
+            if record_checkpoint:
+                checkpoint_iterations.append(iteration)
+                checkpoint_elapsed_seconds.append(time.perf_counter() - start_time)
+                checkpoint_eval_losses.append(float(eval_loss))
+                checkpoint_thetas.append(np.array(theta, dtype=np.float64))
 
         if print_every and ((t % print_every == 0) or (t == n_steps - 1)):
             print(
@@ -462,16 +547,144 @@ def run_pgd(
                 f"train={float(train_loss):.6e} eval={float(last_eval_loss):.6e}"
             )
 
+    elapsed_seconds = time.perf_counter() - start_time
+
     return {
         "theta_final": np.array(phi_to_theta(phi), dtype=np.float64),
         "train_loss_final": float(last_train_loss),
         "eval_loss_final": float(last_eval_loss),
+        "elapsed_seconds": np.asarray(elapsed_seconds, dtype=np.float64),
         "history_steps": np.asarray(history_steps, dtype=np.int32),
         "train_loss_history": np.asarray(train_loss_history, dtype=np.float64),
         "eval_loss_history": np.asarray(eval_loss_history, dtype=np.float64),
         "theta_history": np.asarray(theta_history, dtype=np.float64),
         "direction_history": np.asarray(direction_history, dtype=np.float64),
         "theta_delta_history": np.asarray(theta_delta_history, dtype=np.float64),
+        "checkpoint_iterations": np.asarray(checkpoint_iterations, dtype=np.int32),
+        "checkpoint_elapsed_seconds": np.asarray(checkpoint_elapsed_seconds, dtype=np.float64),
+        "checkpoint_eval_losses": np.asarray(checkpoint_eval_losses, dtype=np.float64),
+        "checkpoint_thetas": np.asarray(checkpoint_thetas, dtype=np.float64),
+    }
+
+
+def run_natural_sgd_method(
+    seed,
+    theta0,
+    y_obs_full,
+    scale_mean,
+    scale_std,
+    n_model=50,
+    target_batch_size=100,
+    n_steps=500,
+    gamma=1e-2,
+    damping=1e-3,
+    ell_fixed=30.0,
+    ell_eval=30.0,
+    num_steps=100,
+    T=1.0,
+    theta1=DEFAULT_THETA1,
+    n_eval_model=200,
+    history_every=100,
+    checkpoint_steps=None,
+    print_every=100,
+    method_label="LV Natural SGD",
+):
+    key = jax.random.PRNGKey(seed + 1500)
+    phi = theta_to_phi(theta0)
+    theta1 = jnp.asarray(theta1, dtype=jnp.float64)
+    checkpoint_steps = _normalize_checkpoint_steps(checkpoint_steps, n_steps)
+    checkpoint_step_set = set(np.asarray(checkpoint_steps, dtype=np.int32).tolist())
+    theta_history = []
+    eval_loss_history = []
+    train_loss_history = []
+    history_steps = []
+    grad_phi_history = []
+    direction_history = []
+    theta_delta_history = []
+    checkpoint_iterations = []
+    checkpoint_elapsed_seconds = []
+    checkpoint_eval_losses = []
+    checkpoint_thetas = []
+    last_train_loss = None
+    last_eval_loss = None
+    start_time = time.perf_counter()
+
+    for t in range(n_steps):
+        key, key_batch, key_model, key_eval = jax.random.split(key, 4)
+        y_batch = _sample_target_batch(key_batch, y_obs_full, target_batch_size)
+        ell_t = jnp.asarray(ell_fixed, dtype=jnp.float64)
+        phi, train_loss, grad_phi, direction, theta_delta = natural_step_phi(
+            phi,
+            key_model,
+            y_batch,
+            n_model,
+            num_steps,
+            jnp.asarray(T, dtype=jnp.float64),
+            theta1,
+            scale_mean,
+            scale_std,
+            ell_t,
+            jnp.asarray(gamma, dtype=jnp.float64),
+            jnp.asarray(damping, dtype=jnp.float64),
+        )
+        last_train_loss = train_loss
+
+        iteration = t + 1
+        record_history = (t % history_every == 0) or (t == n_steps - 1)
+        record_checkpoint = iteration in checkpoint_step_set
+        if record_history or record_checkpoint:
+            theta = phi_to_theta(phi)
+            eval_loss = eval_loss_full(
+                theta,
+                key_eval,
+                n_eval_model,
+                num_steps,
+                jnp.asarray(T, dtype=jnp.float64),
+                theta1,
+                y_obs_full,
+                scale_mean,
+                scale_std,
+                jnp.asarray(ell_eval, dtype=jnp.float64),
+            )
+            last_eval_loss = eval_loss
+            if record_history:
+                history_steps.append(t)
+                train_loss_history.append(float(train_loss))
+                eval_loss_history.append(float(eval_loss))
+                theta_history.append(np.array(theta, dtype=np.float64))
+                grad_phi_history.append(np.array(grad_phi, dtype=np.float64))
+                direction_history.append(np.array(direction, dtype=np.float64))
+                theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
+            if record_checkpoint:
+                checkpoint_iterations.append(iteration)
+                checkpoint_elapsed_seconds.append(time.perf_counter() - start_time)
+                checkpoint_eval_losses.append(float(eval_loss))
+                checkpoint_thetas.append(np.array(theta, dtype=np.float64))
+
+        if print_every and ((t % print_every == 0) or (t == n_steps - 1)):
+            print(
+                f"[{method_label}] step={t:4d} ell={float(ell_t):.4f} theta={np.array(phi_to_theta(phi))} "
+                f"train={float(train_loss):.6e} eval={float(last_eval_loss):.6e}"
+            )
+
+    elapsed_seconds = time.perf_counter() - start_time
+
+    return {
+        "theta_final": np.array(phi_to_theta(phi), dtype=np.float64),
+        "train_loss_final": float(last_train_loss),
+        "eval_loss_final": float(last_eval_loss),
+        "elapsed_seconds": np.asarray(elapsed_seconds, dtype=np.float64),
+        "history_steps": np.asarray(history_steps, dtype=np.int32),
+        "train_loss_history": np.asarray(train_loss_history, dtype=np.float64),
+        "eval_loss_history": np.asarray(eval_loss_history, dtype=np.float64),
+        "theta_history": np.asarray(theta_history, dtype=np.float64),
+        "grad_phi_history": np.asarray(grad_phi_history, dtype=np.float64),
+        "direction_history": np.asarray(direction_history, dtype=np.float64),
+        "theta_delta_history": np.asarray(theta_delta_history, dtype=np.float64),
+        "checkpoint_iterations": np.asarray(checkpoint_iterations, dtype=np.int32),
+        "checkpoint_elapsed_seconds": np.asarray(checkpoint_elapsed_seconds, dtype=np.float64),
+        "checkpoint_eval_losses": np.asarray(checkpoint_eval_losses, dtype=np.float64),
+        "checkpoint_thetas": np.asarray(checkpoint_thetas, dtype=np.float64),
     }
 
 
@@ -536,6 +749,7 @@ def run_one_seed(
     pgd_decay=0.995,
     n_eval_model=200,
     history_every=100,
+    checkpoint_steps=(10, 1000, 3000, 12000, 20000),
     print_every=100,
     run_plain_sgd=True,
     run_natural_sgd=False,
@@ -627,7 +841,6 @@ def run_one_seed(
     fixed_ell_schedule_pgd = np.full((pgd_n_steps,), pgd_ell_min, dtype=np.float64)
 
     if run_plain_sgd:
-        sgd_start = time.perf_counter()
         sgd_res = run_sgd(
             seed=seed,
             theta0=theta0,
@@ -645,16 +858,13 @@ def run_one_seed(
             theta1=theta1,
             n_eval_model=n_eval_model,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
             print_every=print_every,
         )
-        sgd_elapsed_seconds = time.perf_counter() - sgd_start
         result.update(_prefix_result("sgd", sgd_res))
-        result["sgd_elapsed_seconds"] = np.asarray(sgd_elapsed_seconds, dtype=np.float64)
 
     if run_natural_sgd:
-        natural_ell_schedule = np.full((sgd_n_steps,), ell_fixed, dtype=np.float64)
-        natural_sgd_start = time.perf_counter()
-        natural_sgd_res = run_pgd(
+        natural_sgd_res = run_natural_sgd_method(
             seed=seed,
             theta0=theta0,
             y_obs_full=y_obs_full,
@@ -664,26 +874,21 @@ def run_one_seed(
             target_batch_size=target_batch_size,
             n_steps=sgd_n_steps,
             gamma=natural_sgd_gamma,
-            lambda_scale=natural_damping,
-            ell0=pgd_ell0,
-            ell_min=pgd_ell_min,
-            decay=pgd_decay,
+            damping=natural_damping,
+            ell_fixed=ell_fixed,
             ell_eval=ell_eval,
-            ell_schedule=natural_ell_schedule,
             num_steps=num_steps,
             T=T,
             theta1=theta1,
             n_eval_model=n_eval_model,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
             print_every=print_every,
             method_label="LV Natural SGD",
         )
-        natural_sgd_elapsed_seconds = time.perf_counter() - natural_sgd_start
         result.update(_prefix_result("natural", natural_sgd_res))
-        result["natural_elapsed_seconds"] = np.asarray(natural_sgd_elapsed_seconds, dtype=np.float64)
 
     if run_adaptive_sgd:
-        adaptive_sgd_start = time.perf_counter()
         adaptive_sgd_res = run_sgd(
             seed=seed,
             theta0=theta0,
@@ -702,14 +907,12 @@ def run_one_seed(
             theta1=theta1,
             n_eval_model=n_eval_model,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
             print_every=print_every,
             method_label="LV SGD-adaptive-ell",
         )
-        adaptive_sgd_elapsed_seconds = time.perf_counter() - adaptive_sgd_start
         result.update(_prefix_result("adaptive_sgd", adaptive_sgd_res))
-        result["adaptive_sgd_elapsed_seconds"] = np.asarray(adaptive_sgd_elapsed_seconds, dtype=np.float64)
 
-    pgd_start = time.perf_counter()
     pgd_res = run_pgd(
         seed=seed,
         theta0=theta0,
@@ -730,14 +933,12 @@ def run_one_seed(
         theta1=theta1,
         n_eval_model=n_eval_model,
         history_every=history_every,
+        checkpoint_steps=checkpoint_steps,
         print_every=print_every,
     )
-    pgd_elapsed_seconds = time.perf_counter() - pgd_start
     result.update(_prefix_result("pgd", pgd_res))
-    result["pgd_elapsed_seconds"] = np.asarray(pgd_elapsed_seconds, dtype=np.float64)
 
     if run_fixed_pgd:
-        fixed_pgd_start = time.perf_counter()
         fixed_pgd_res = run_pgd(
             seed=seed,
             theta0=theta0,
@@ -759,12 +960,11 @@ def run_one_seed(
             theta1=theta1,
             n_eval_model=n_eval_model,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
             print_every=print_every,
             method_label="LV PGD-fixed-ell",
         )
-        fixed_pgd_elapsed_seconds = time.perf_counter() - fixed_pgd_start
         result.update(_prefix_result("fixed_pgd", fixed_pgd_res))
-        result["fixed_pgd_elapsed_seconds"] = np.asarray(fixed_pgd_elapsed_seconds, dtype=np.float64)
     return result
 
 
@@ -879,6 +1079,33 @@ def run_experiment(
             }
         )
 
+        checkpoint_iteration_key = f"{method}_checkpoint_iterations"
+        if all(checkpoint_iteration_key in res for res in per_seed):
+            checkpoint_iterations = np.asarray(per_seed[0][checkpoint_iteration_key], dtype=np.int32)
+            checkpoint_elapsed_seconds = _stack(
+                [res[f"{method}_checkpoint_elapsed_seconds"] for res in per_seed]
+            )
+            checkpoint_eval_losses = _stack(
+                [res[f"{method}_checkpoint_eval_losses"] for res in per_seed]
+            )
+            checkpoint_thetas = _stack(
+                [res[f"{method}_checkpoint_thetas"] for res in per_seed]
+            )
+            results.update(
+                {
+                    f"{method}_checkpoint_iterations": checkpoint_iterations,
+                    f"{method}_checkpoint_elapsed_seconds": checkpoint_elapsed_seconds,
+                    f"{method}_checkpoint_elapsed_mean": np.mean(checkpoint_elapsed_seconds, axis=0),
+                    f"{method}_checkpoint_elapsed_std": np.std(checkpoint_elapsed_seconds, axis=0),
+                    f"{method}_checkpoint_eval_losses": checkpoint_eval_losses,
+                    f"{method}_checkpoint_eval_mean": np.mean(checkpoint_eval_losses, axis=0),
+                    f"{method}_checkpoint_eval_std": np.std(checkpoint_eval_losses, axis=0),
+                    f"{method}_checkpoint_thetas": checkpoint_thetas,
+                    f"{method}_checkpoint_theta_mean": np.mean(checkpoint_thetas, axis=0),
+                    f"{method}_checkpoint_theta_std": np.std(checkpoint_thetas, axis=0),
+                }
+            )
+
     results.update(
         {
             "m_obs": np.asarray(kwargs.get("m_obs", 100), dtype=np.int32),
@@ -909,6 +1136,13 @@ def run_experiment(
             "run_natural_sgd": np.asarray(kwargs.get("run_natural_sgd", False), dtype=np.bool_),
             "run_adaptive_sgd": np.asarray(kwargs.get("run_adaptive_sgd", False), dtype=np.bool_),
             "run_fixed_pgd": np.asarray(kwargs.get("run_fixed_pgd", False), dtype=np.bool_),
+            "checkpoint_steps": np.asarray(
+                _normalize_checkpoint_steps(
+                    kwargs.get("checkpoint_steps", (10, 1000, 3000, 12000, 20000)),
+                    int(kwargs.get("n_steps", 500)),
+                ),
+                dtype=np.int32,
+            ),
             "uses_theta0_by_seed": np.asarray(theta0_by_seed is not None, dtype=np.bool_),
         }
     )
@@ -1306,13 +1540,13 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "decay_ablation"
+    experiment_mode = "observation_model_grid"
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
-    sgd_n_steps = 12000
+    sgd_n_steps = 20000
     pgd_n_steps = 12000
-    single_run_theta0_by_seed = np.tile(np.array([50.0, 60.0], dtype=np.float64), (10, 1))
+    single_run_theta0_by_seed = np.tile(np.array([90.0, 90.0], dtype=np.float64), (10, 1))
     # single_run_theta0_by_seed = np.array(
     #         [
     #             [60.0, 60.0],
@@ -1332,12 +1566,12 @@ if __name__ == "__main__":
         pgd_ell0=3000,
         pgd_ell_min=30,
         pgd_decay=0.9995,
-        run_plain_sgd=False,
+        run_plain_sgd=True,
         run_natural_sgd=True,
         run_adaptive_sgd=False,
         run_fixed_pgd=False,
         sgd_gamma=100,
-        natural_sgd_gamma=10000,
+        natural_sgd_gamma=100,
         pgd_gamma=300,
         pgd_lambda_scale=1e-3,
         natural_damping=1e-3,
@@ -1388,15 +1622,26 @@ if __name__ == "__main__":
     if experiment_mode == "single_run":
         result = run_experiment(
             seeds=range(10),
-            output_path="results/lv/lv_results_60_60_1.npz",
+            output_path="results/lv/lotka_volterra_results_90_90.npz",
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,
             theta0_by_seed=single_run_theta0_by_seed,
             **single_run_kwargs,
         )
-        print("SGD MMD theta mean:", result["sgd_theta_mean"])
-        print("PGD theta mean:", result["pgd_theta_mean"])
+        for method_name, label in (
+            ("sgd", "SGD"),
+            ("natural", "Natural SGD"),
+            ("adaptive_sgd", "Adaptive SGD"),
+            ("pgd", "PGD"),
+            ("fixed_pgd", "PGD (fixed ell)"),
+        ):
+            theta_key = f"{method_name}_theta_mean"
+            eval_key = f"{method_name}_eval_mean"
+            if theta_key in result:
+                print(f"{label} theta mean:", result[theta_key])
+            if eval_key in result:
+                print(f"{label} eval mean:", result[eval_key])
 
     elif experiment_mode == "step_size_ablation":
         result = run_step_size_ablation(
@@ -1428,7 +1673,7 @@ if __name__ == "__main__":
         result = run_observation_model_grid(
             output_dir="ablations/lv_mn_grid",
             m_obs_values=[50, 100, 200],
-            n_model_values=[1], #25, 50, 100, 200
+            n_model_values=[10], #25, 50, 100, 200
             seeds=range(5),
             tie_target_batch_to_m_obs=True,
             n_steps=max(sgd_n_steps, pgd_n_steps),
