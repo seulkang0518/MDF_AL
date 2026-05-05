@@ -231,6 +231,67 @@ def _draw_theta_error_heatmap(error_grid, ell_values, lambda_values, output_path
         return _save_figure(fig, output_path, bbox_inches="tight")
 
 
+def _draw_lengthscale_pair_heatmaps(
+    grids,
+    x_values,
+    y_values,
+    lambda_values,
+    colorbar_label,
+    output_path=None,
+):
+    masked_grids = [np.ma.masked_invalid(np.asarray(grid, dtype=float)) for grid in grids]
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad(color="lightgray")
+
+    finite_values = np.concatenate(
+        [grid.compressed() for grid in masked_grids if np.ma.count(grid) > 0]
+    )
+    vmin = float(np.min(finite_values)) if finite_values.size else None
+    vmax = float(np.max(finite_values)) if finite_values.size else None
+
+    ncols = len(lambda_values)
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, axes = plt.subplots(
+            1,
+            ncols,
+            figsize=(5.2 * ncols, 4.8),
+            dpi=SUMMARY_DPI,
+            squeeze=False,
+        )
+        axes = axes[0]
+        ims = []
+
+        for ax, lam, grid in zip(axes, lambda_values, masked_grids):
+            im = ax.imshow(grid, cmap=cmap, aspect="auto", vmin=vmin, vmax=vmax)
+            ims.append(im)
+            ax.set_xticks(np.arange(len(x_values)))
+            ax.set_yticks(np.arange(len(y_values)))
+            ax.set_xticklabels([f"{value:g}" for value in x_values])
+            ax.set_yticklabels([f"{value:g}" for value in y_values])
+            ax.set_xlabel(r"$\ell_0$")
+            ax.set_ylabel(r"$\ell_{\infty}$")
+            ax.set_title(rf"$\lambda = {lam:g}$", pad=TITLE_PAD)
+            ax.grid(False)
+
+            for i in range(grid.shape[0]):
+                for j in range(grid.shape[1]):
+                    if np.isfinite(grid[i, j]):
+                        ax.text(
+                            j,
+                            i,
+                            f"{grid[i, j]:.2e}",
+                            ha="center",
+                            va="center",
+                            color="white",
+                            fontsize=10,
+                        )
+
+        cbar = fig.colorbar(ims[-1], ax=axes, fraction=0.03, pad=0.03)
+        cbar.set_label(colorbar_label, rotation=270, labelpad=30)
+        fig.tight_layout()
+        return _save_figure(fig, output_path, bbox_inches="tight")
+
+
 def _get_lhs_rhs_series(data):
     if all(key in data for key in ("last_adapt_checkpoint_steps", "last_adapt_lhs", "last_adapt_rhs")):
         step_offset = 1.0 if "theta_true" in data or "baseline_history_steps" in data else 0.0
@@ -1614,6 +1675,112 @@ def make_lv_theta_error_heatmap(results_dir, output_path):
                 error_grid[i, j] = error_by_cell[(float(lam), float(ell))]
 
     return _draw_theta_error_heatmap(error_grid, sorted_ells, sorted_lambdas, output_path)
+
+
+def make_lv_lengthscale_pair_heatmaps(results_dir, theta_output_path=None, mmd_output_path=None):
+    results_dir = Path(results_dir)
+    summary_path = (
+        results_dir / "lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_pgd_ell0_summary.npz"
+    )
+    if not summary_path.exists():
+        raise ValueError(f"Missing LV pair-summary file: {summary_path}")
+
+    summary = _load_npz_dict(summary_path)
+    ell_inf_values = np.asarray(summary["lengthscale_values"], dtype=float)
+    ell0_values = np.asarray(summary["secondary_lengthscale_values"], dtype=float)
+    lambda_values = np.asarray(summary["lambda_scales"], dtype=float)
+    output_paths = np.asarray(summary["output_paths"], dtype=object)
+    eval_grids = np.asarray(summary["pgd_eval_mean_grid"], dtype=float)
+
+    theta_error_grids = np.full_like(eval_grids, np.nan, dtype=float)
+    for lambda_idx in range(output_paths.shape[0]):
+        for ell0_idx in range(output_paths.shape[1]):
+            for ell_idx in range(output_paths.shape[2]):
+                npz_path = Path(str(output_paths[lambda_idx, ell0_idx, ell_idx]))
+                data = _load_npz_dict(npz_path)
+                theta_true = np.asarray(data["theta_true"], dtype=float)
+                theta_final = np.asarray(data["pgd_theta_mean"], dtype=float)
+                theta_error_grids[lambda_idx, ell0_idx, ell_idx] = float(
+                    np.linalg.norm(theta_final - theta_true)
+                )
+
+    theta_fig = _draw_lengthscale_pair_heatmaps(
+        grids=[theta_error_grids[idx] for idx in range(len(lambda_values))],
+        x_values=ell0_values,
+        y_values=ell_inf_values,
+        lambda_values=lambda_values,
+        colorbar_label=r"$\|\bar{\theta}_{final} - \theta_{true}\|_2$",
+        output_path=theta_output_path,
+    )
+    mmd_fig = _draw_lengthscale_pair_heatmaps(
+        grids=[eval_grids[idx] for idx in range(len(lambda_values))],
+        x_values=ell0_values,
+        y_values=ell_inf_values,
+        lambda_values=lambda_values,
+        colorbar_label=r"Final MMD",
+        output_path=mmd_output_path,
+    )
+    return theta_fig, mmd_fig
+
+
+def make_lv_step_size_boxplot(results_dir, output_path=None, metric="pgd_eval_losses"):
+    results_dir = Path(results_dir)
+    filename_pattern = re.compile(
+        r"lotka_volterra_step_size_ablation_pgd_gamma_sweep_(?P<gamma>[^_]+)\.npz$"
+    )
+
+    gamma_values = []
+    box_values = []
+
+    for npz_path in sorted(results_dir.glob("lotka_volterra_step_size_ablation_pgd_gamma_sweep_*.npz")):
+        if npz_path.name.endswith("_summary.npz"):
+            continue
+        match = filename_pattern.match(npz_path.name)
+        if match is None:
+            continue
+
+        gamma = _parse_heatmap_float(match.group("gamma"))
+        data = _load_npz_dict(npz_path)
+
+        if metric == "pgd_eval_losses":
+            values = np.asarray(data["pgd_eval_losses"], dtype=float)
+            ylabel = "Final MMD"
+        elif metric == "pgd_theta_error":
+            theta_true = np.asarray(data["theta_true"], dtype=float)
+            theta_finals = np.asarray(data["pgd_theta_finals"], dtype=float)
+            values = np.linalg.norm(theta_finals - theta_true[None, :], axis=1)
+            ylabel = r"$\|\theta_{final} - \theta_{true}\|_2$"
+        else:
+            raise ValueError("metric must be 'pgd_eval_losses' or 'pgd_theta_error'")
+
+        gamma_values.append(gamma)
+        box_values.append(values)
+
+    if not box_values:
+        raise ValueError(f"No LV step-size ablation files found in {results_dir}")
+
+    order = np.argsort(np.asarray(gamma_values, dtype=float))
+    gamma_values = [gamma_values[idx] for idx in order]
+    box_values = [box_values[idx] for idx in order]
+
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, ax = plt.subplots(figsize=(7.2, 4.8), dpi=SUMMARY_DPI)
+        bp = ax.boxplot(box_values, patch_artist=True, widths=0.6)
+
+        for patch in bp["boxes"]:
+            patch.set_facecolor(COLORS["pgd"])
+            patch.set_alpha(0.75)
+        for median in bp["medians"]:
+            median.set_color("black")
+            median.set_linewidth(2.0)
+
+        ax.set_xticks(np.arange(1, len(gamma_values) + 1))
+        ax.set_xticklabels([f"{gamma:g}" for gamma in gamma_values])
+        ax.set_xlabel("Step size")
+        ax.set_ylabel(ylabel)
+        ax.grid(True, axis="y", alpha=0.3)
+        fig.tight_layout()
+        return _save_figure(fig, output_path, bbox_inches="tight")
 
 
 def _run_if_inputs_exist(label, input_paths, output_path, plotter):

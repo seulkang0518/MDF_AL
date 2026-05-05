@@ -289,12 +289,14 @@ def run_sgd(
     gamma=1e-2,
     ell_fixed=30.0,
     ell_eval=30.0,
+    ell_schedule=None,
     num_steps=100,
     T=1.0,
     theta1=DEFAULT_THETA1,
     n_eval_model=200,
     history_every=100,
     print_every=100,
+    method_label="LV SGD",
 ):
     key = jax.random.PRNGKey(seed + 1000)
     phi = theta_to_phi(theta0)
@@ -311,6 +313,7 @@ def run_sgd(
     for t in range(n_steps):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
         y_batch = _sample_target_batch(key_batch, y_obs_full, target_batch_size)
+        ell_t = ell_fixed if ell_schedule is None else ell_schedule[t]
         phi, train_loss, grad_phi, theta_delta = sgd_step_phi(
             phi,
             key_model,
@@ -321,7 +324,7 @@ def run_sgd(
             theta1,
             scale_mean,
             scale_std,
-            jnp.asarray(ell_fixed, dtype=jnp.float64),
+            jnp.asarray(ell_t, dtype=jnp.float64),
             jnp.asarray(gamma, dtype=jnp.float64),
         )
         last_train_loss = train_loss
@@ -350,7 +353,7 @@ def run_sgd(
 
         if print_every and ((t % print_every == 0) or (t == n_steps - 1)):
             print(
-                f"[LV SGD] step={t:4d} theta={np.array(phi_to_theta(phi))} "
+                f"[{method_label}] step={t:4d} ell={float(ell_t):.4f} theta={np.array(phi_to_theta(phi))} "
                 f"train={float(train_loss):.6e} eval={float(last_eval_loss):.6e}"
             )
 
@@ -382,17 +385,24 @@ def run_pgd(
     ell_min=30.0,
     decay=0.995,
     ell_eval=30.0,
+    ell_schedule=None,
     num_steps=100,
     T=1.0,
     theta1=DEFAULT_THETA1,
     n_eval_model=200,
     history_every=100,
     print_every=100,
+    method_label="LV PGD",
 ):
     key = jax.random.PRNGKey(seed + 2000)
     phi = theta_to_phi(theta0)
     theta1 = jnp.asarray(theta1, dtype=jnp.float64)
-    ell_schedule = make_adaptive_ell_schedule(n_steps, ell0, ell_min, decay)
+    if ell_schedule is None:
+        ell_schedule = make_adaptive_ell_schedule(n_steps, ell0, ell_min, decay)
+    else:
+        ell_schedule = np.asarray(ell_schedule, dtype=np.float64)
+        if ell_schedule.shape[0] != n_steps:
+            raise ValueError("ell_schedule must have length n_steps.")
     theta_history = []
     eval_loss_history = []
     train_loss_history = []
@@ -448,7 +458,7 @@ def run_pgd(
 
         if print_every and ((t % print_every == 0) or (t == n_steps - 1)):
             print(
-                f"[LV PGD] step={t:4d} ell={ell_t:.4f} theta={np.array(phi_to_theta(phi))} "
+                f"[{method_label}] step={t:4d} ell={ell_t:.4f} theta={np.array(phi_to_theta(phi))} "
                 f"train={float(train_loss):.6e} eval={float(last_eval_loss):.6e}"
             )
 
@@ -528,6 +538,8 @@ def run_one_seed(
     history_every=100,
     print_every=100,
     run_plain_sgd=True,
+    run_adaptive_sgd=False,
+    run_fixed_pgd=False,
     sgd_gamma=1e-2,
     standardize=False,
     scale_eps=1e-6,
@@ -606,6 +618,8 @@ def run_one_seed(
         "kernel_diag_cross_q50": np.asarray(cross_q50, dtype=np.float64),
         "kernel_diag_cross_q90": np.asarray(cross_q90, dtype=np.float64),
     }
+    adaptive_ell_schedule_sgd = make_adaptive_ell_schedule(sgd_n_steps, pgd_ell0, pgd_ell_min, pgd_decay)
+    fixed_ell_schedule_pgd = np.full((pgd_n_steps,), pgd_ell_min, dtype=np.float64)
 
     if run_plain_sgd:
         sgd_start = time.perf_counter()
@@ -631,6 +645,33 @@ def run_one_seed(
         sgd_elapsed_seconds = time.perf_counter() - sgd_start
         result.update(_prefix_result("sgd", sgd_res))
         result["sgd_elapsed_seconds"] = np.asarray(sgd_elapsed_seconds, dtype=np.float64)
+
+    if run_adaptive_sgd:
+        adaptive_sgd_start = time.perf_counter()
+        adaptive_sgd_res = run_sgd(
+            seed=seed,
+            theta0=theta0,
+            y_obs_full=y_obs_full,
+            scale_mean=scale_mean,
+            scale_std=scale_std,
+            n_model=n_model,
+            target_batch_size=target_batch_size,
+            n_steps=sgd_n_steps,
+            gamma=sgd_gamma,
+            ell_fixed=ell_fixed,
+            ell_eval=ell_eval,
+            ell_schedule=adaptive_ell_schedule_sgd,
+            num_steps=num_steps,
+            T=T,
+            theta1=theta1,
+            n_eval_model=n_eval_model,
+            history_every=history_every,
+            print_every=print_every,
+            method_label="LV SGD-adaptive-ell",
+        )
+        adaptive_sgd_elapsed_seconds = time.perf_counter() - adaptive_sgd_start
+        result.update(_prefix_result("adaptive_sgd", adaptive_sgd_res))
+        result["adaptive_sgd_elapsed_seconds"] = np.asarray(adaptive_sgd_elapsed_seconds, dtype=np.float64)
 
     pgd_start = time.perf_counter()
     pgd_res = run_pgd(
@@ -658,6 +699,36 @@ def run_one_seed(
     pgd_elapsed_seconds = time.perf_counter() - pgd_start
     result.update(_prefix_result("pgd", pgd_res))
     result["pgd_elapsed_seconds"] = np.asarray(pgd_elapsed_seconds, dtype=np.float64)
+
+    if run_fixed_pgd:
+        fixed_pgd_start = time.perf_counter()
+        fixed_pgd_res = run_pgd(
+            seed=seed,
+            theta0=theta0,
+            y_obs_full=y_obs_full,
+            scale_mean=scale_mean,
+            scale_std=scale_std,
+            n_model=n_model,
+            target_batch_size=target_batch_size,
+            n_steps=pgd_n_steps,
+            gamma=pgd_gamma,
+            lambda_scale=pgd_lambda_scale,
+            ell0=pgd_ell0,
+            ell_min=pgd_ell_min,
+            decay=pgd_decay,
+            ell_eval=ell_eval,
+            ell_schedule=fixed_ell_schedule_pgd,
+            num_steps=num_steps,
+            T=T,
+            theta1=theta1,
+            n_eval_model=n_eval_model,
+            history_every=history_every,
+            print_every=print_every,
+            method_label="LV PGD-fixed-ell",
+        )
+        fixed_pgd_elapsed_seconds = time.perf_counter() - fixed_pgd_start
+        result.update(_prefix_result("fixed_pgd", fixed_pgd_res))
+        result["fixed_pgd_elapsed_seconds"] = np.asarray(fixed_pgd_elapsed_seconds, dtype=np.float64)
     return result
 
 
@@ -717,9 +788,10 @@ def run_experiment(
         seed_kwargs["theta0"] = theta0_seed
         per_seed.append(run_one_seed(seed=seed, **seed_kwargs))
 
-    method_names = ["pgd"]
-    if any("sgd_theta_final" in res for res in per_seed):
-        method_names.insert(0, "sgd")
+    method_names = []
+    for method in ("sgd", "adaptive_sgd", "pgd", "fixed_pgd"):
+        if any(f"{method}_theta_final" in res for res in per_seed):
+            method_names.append(method)
 
     results = {
         "seeds": np.asarray(seeds, dtype=np.int32),
@@ -790,6 +862,8 @@ def run_experiment(
             "scale_eps": np.asarray(kwargs.get("scale_eps", 1e-6), dtype=np.float64),
             "kernel_diag_max_pairs": np.asarray(kwargs.get("kernel_diag_max_pairs", 20000), dtype=np.int32),
             "print_kernel_diagnostics": np.asarray(kwargs.get("print_kernel_diagnostics", False), dtype=np.bool_),
+            "run_adaptive_sgd": np.asarray(kwargs.get("run_adaptive_sgd", False), dtype=np.bool_),
+            "run_fixed_pgd": np.asarray(kwargs.get("run_fixed_pgd", False), dtype=np.bool_),
             "uses_theta0_by_seed": np.asarray(theta0_by_seed is not None, dtype=np.bool_),
         }
     )
@@ -836,7 +910,7 @@ def run_ablation_sweep(
         "seeds": np.asarray(list(seeds), dtype=np.int32),
     }
 
-    for method in ("sgd", "pgd"):
+    for method in ("sgd", "pgd", "adaptive_sgd", "fixed_pgd"):
         key = f"{method}_theta_mean"
         if key not in per_value_results[0]:
             continue
@@ -900,11 +974,130 @@ def run_regularization_ablation(
     )
 
 
+def run_step_size_ablation(
+    output_dir,
+    gamma_values,
+    sweep_param="pgd_gamma",
+    seeds=range(5),
+    file_prefix="lotka_volterra_step_size_ablation",
+    **kwargs,
+):
+    run_kwargs = dict(kwargs)
+    run_kwargs.setdefault("run_plain_sgd", False)
+    return run_ablation_sweep(
+        sweep_name=f"{sweep_param}_sweep",
+        sweep_param=sweep_param,
+        sweep_values=gamma_values,
+        output_dir=output_dir,
+        seeds=seeds,
+        file_prefix=file_prefix,
+        **run_kwargs,
+    )
+
+
+def run_decay_ablation(
+    output_dir,
+    decay_values,
+    sweep_param="pgd_decay",
+    seeds=range(5),
+    file_prefix="lotka_volterra_decay_ablation",
+    **kwargs,
+):
+    run_kwargs = dict(kwargs)
+    run_kwargs.setdefault("run_plain_sgd", False)
+    return run_ablation_sweep(
+        sweep_name=f"{sweep_param}_sweep",
+        sweep_param=sweep_param,
+        sweep_values=decay_values,
+        output_dir=output_dir,
+        seeds=seeds,
+        file_prefix=file_prefix,
+        **run_kwargs,
+    )
+
+
+def run_observation_model_grid(
+    output_dir,
+    m_obs_values,
+    n_model_values,
+    seeds=range(5),
+    file_prefix="lotka_volterra_observation_model_grid",
+    tie_target_batch_to_m_obs=True,
+    **kwargs,
+):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    m_obs_values = list(m_obs_values)
+    n_model_values = list(n_model_values)
+
+    pgd_eval_mean_grid = np.full(
+        (len(m_obs_values), len(n_model_values)),
+        np.nan,
+        dtype=np.float64,
+    )
+    pgd_eval_std_grid = np.full_like(pgd_eval_mean_grid, np.nan)
+    pgd_theta_mean_grid = np.full(
+        (len(m_obs_values), len(n_model_values), 2),
+        np.nan,
+        dtype=np.float64,
+    )
+    sgd_eval_mean_grid = np.full_like(pgd_eval_mean_grid, np.nan)
+    output_paths = np.empty((len(m_obs_values), len(n_model_values)), dtype=object)
+
+    for obs_idx, m_obs in enumerate(m_obs_values):
+        for model_idx, n_model in enumerate(n_model_values):
+            cell_kwargs = dict(kwargs)
+            cell_kwargs["m_obs"] = m_obs
+            cell_kwargs["n_model"] = n_model
+            if tie_target_batch_to_m_obs:
+                cell_kwargs["target_batch_size"] = m_obs
+
+            output_path = output_dir / (
+                f"{file_prefix}_m_{_format_value_for_filename(m_obs)}"
+                f"_n_{_format_value_for_filename(n_model)}.npz"
+            )
+            result = run_experiment(
+                seeds=seeds,
+                output_path=output_path,
+                **cell_kwargs,
+            )
+
+            pgd_eval_mean_grid[obs_idx, model_idx] = result["pgd_eval_mean"]
+            pgd_eval_std_grid[obs_idx, model_idx] = result["pgd_eval_std"]
+            pgd_theta_mean_grid[obs_idx, model_idx] = result["pgd_theta_mean"]
+            if "sgd_eval_mean" in result:
+                sgd_eval_mean_grid[obs_idx, model_idx] = result["sgd_eval_mean"]
+            output_paths[obs_idx, model_idx] = str(output_path)
+
+    summary = {
+        "grid_name": np.asarray("observation_model_grid"),
+        "m_obs_values": np.asarray(m_obs_values, dtype=np.int32),
+        "n_model_values": np.asarray(n_model_values, dtype=np.int32),
+        "pgd_eval_mean_grid": pgd_eval_mean_grid,
+        "pgd_eval_std_grid": pgd_eval_std_grid,
+        "pgd_theta_mean_grid": pgd_theta_mean_grid,
+        "output_paths": np.asarray(output_paths, dtype=str),
+        "seeds": np.asarray(list(seeds), dtype=np.int32),
+        "tie_target_batch_to_m_obs": np.asarray(tie_target_batch_to_m_obs, dtype=np.bool_),
+    }
+
+    if np.isfinite(sgd_eval_mean_grid).any():
+        summary["sgd_eval_mean_grid"] = sgd_eval_mean_grid
+
+    summary_path = output_dir / f"{file_prefix}_summary.npz"
+    save_results(summary, summary_path)
+    summary["summary_path"] = str(summary_path)
+    return summary
+
+
 def run_lengthscale_regularization_grid(
     output_dir,
     lengthscale_param,
     lengthscale_values,
     lambda_scales,
+    secondary_lengthscale_param=None,
+    secondary_lengthscale_values=None,
     seeds=range(5),
     file_prefix="lotka_volterra_lengthscale_regularization_grid",
     **kwargs,
@@ -918,49 +1111,139 @@ def run_lengthscale_regularization_grid(
     lengthscale_values = list(lengthscale_values)
     lambda_scales = list(lambda_scales)
 
-    eval_mean_grid = np.full((len(lambda_scales), len(lengthscale_values)), np.nan, dtype=np.float64)
-    eval_std_grid = np.full((len(lambda_scales), len(lengthscale_values)), np.nan, dtype=np.float64)
-    theta_mean_grid = np.full((len(lambda_scales), len(lengthscale_values), 2), np.nan, dtype=np.float64)
-    theta_std_grid = np.full((len(lambda_scales), len(lengthscale_values), 2), np.nan, dtype=np.float64)
-    output_paths = np.empty((len(lambda_scales), len(lengthscale_values)), dtype=object)
+    if secondary_lengthscale_param is None:
+        eval_mean_grid = np.full((len(lambda_scales), len(lengthscale_values)), np.nan, dtype=np.float64)
+        eval_std_grid = np.full((len(lambda_scales), len(lengthscale_values)), np.nan, dtype=np.float64)
+        theta_mean_grid = np.full((len(lambda_scales), len(lengthscale_values), 2), np.nan, dtype=np.float64)
+        theta_std_grid = np.full((len(lambda_scales), len(lengthscale_values), 2), np.nan, dtype=np.float64)
+        output_paths = np.empty((len(lambda_scales), len(lengthscale_values)), dtype=object)
 
-    for lambda_idx, lambda_scale in enumerate(lambda_scales):
-        for ell_idx, lengthscale_value in enumerate(lengthscale_values):
-            cell_kwargs = dict(run_kwargs)
-            cell_kwargs["pgd_lambda_scale"] = lambda_scale
-            cell_kwargs[lengthscale_param] = lengthscale_value
-            # Keep reporting bandwidth aligned with the swept minimum lengthscale.
-            if lengthscale_param == "pgd_ell_min":
-                cell_kwargs["ell_eval"] = lengthscale_value
-            output_path = output_dir / (
-                f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
-                f"_lambda_{_format_value_for_filename(lambda_scale)}.npz"
+        for lambda_idx, lambda_scale in enumerate(lambda_scales):
+            for ell_idx, lengthscale_value in enumerate(lengthscale_values):
+                cell_kwargs = dict(run_kwargs)
+                cell_kwargs["pgd_lambda_scale"] = lambda_scale
+                cell_kwargs[lengthscale_param] = lengthscale_value
+                if lengthscale_param == "pgd_ell_min":
+                    cell_kwargs["ell_eval"] = lengthscale_value
+                output_path = output_dir / (
+                    f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
+                    f"_lambda_{_format_value_for_filename(lambda_scale)}.npz"
+                )
+
+        for method in ("adaptive_sgd", "fixed_pgd"):
+            if f"{method}_theta_final" not in per_seed[0]:
+                continue
+            theta_finals = _stack([res[f"{method}_theta_final"] for res in per_seed])
+            eval_losses = _stack([res[f"{method}_eval_loss_final"] for res in per_seed])
+            elapsed_seconds = _stack([res[f"{method}_elapsed_seconds"] for res in per_seed])
+            history_steps = _stack([res[f"{method}_history_steps"] for res in per_seed], dtype=np.int32)[0]
+            eval_histories = _stack([res[f"{method}_eval_loss_history"] for res in per_seed])
+            train_histories = _stack([res[f"{method}_train_loss_history"] for res in per_seed])
+            theta_histories = _stack([res[f"{method}_theta_history"] for res in per_seed])
+            direction_histories = _stack([res[f"{method}_direction_history"] for res in per_seed])
+            theta_delta_histories = _stack([res[f"{method}_theta_delta_history"] for res in per_seed])
+            results.update(
+                {
+                    f"{method}_theta_finals": theta_finals,
+                    f"{method}_theta_mean": np.mean(theta_finals, axis=0),
+                    f"{method}_theta_std": np.std(theta_finals, axis=0),
+                    f"{method}_theta_se": np.std(theta_finals, axis=0) / np.sqrt(max(theta_finals.shape[0], 1)),
+                    f"{method}_eval_losses": eval_losses,
+                    f"{method}_eval_mean": np.mean(eval_losses),
+                    f"{method}_eval_std": np.std(eval_losses),
+                    f"{method}_eval_se": np.std(eval_losses) / np.sqrt(max(len(eval_losses), 1)),
+                    f"{method}_elapsed_seconds": elapsed_seconds,
+                    f"{method}_elapsed_mean": np.mean(elapsed_seconds),
+                    f"{method}_elapsed_std": np.std(elapsed_seconds),
+                    f"{method}_elapsed_se": np.std(elapsed_seconds) / np.sqrt(max(len(elapsed_seconds), 1)),
+                    f"{method}_history_steps": history_steps,
+                    f"{method}_eval_histories": eval_histories,
+                    f"{method}_train_histories": train_histories,
+                    f"{method}_theta_histories": theta_histories,
+                    f"{method}_direction_histories": direction_histories,
+                    f"{method}_theta_delta_histories": theta_delta_histories,
+                    f"{method}_eval_history_mean": np.mean(eval_histories, axis=0),
+                    f"{method}_train_history_mean": np.mean(train_histories, axis=0),
+                    f"{method}_theta_history_mean": np.mean(theta_histories, axis=0),
+                }
             )
-            result = run_experiment(
-                seeds=seeds,
-                output_path=output_path,
-                **cell_kwargs,
-            )
-            eval_mean_grid[lambda_idx, ell_idx] = result["pgd_eval_mean"]
-            eval_std_grid[lambda_idx, ell_idx] = result["pgd_eval_std"]
-            theta_mean_grid[lambda_idx, ell_idx] = result["pgd_theta_mean"]
-            theta_std_grid[lambda_idx, ell_idx] = result["pgd_theta_std"]
-            output_paths[lambda_idx, ell_idx] = str(output_path)
+        summary = {
+            "grid_name": np.asarray("lengthscale_regularization_grid"),
+            "lengthscale_param": np.asarray(lengthscale_param),
+            "lengthscale_values": np.asarray(lengthscale_values, dtype=np.float64),
+            "lambda_scales": np.asarray(lambda_scales, dtype=np.float64),
+            "pgd_eval_mean_grid": eval_mean_grid,
+            "pgd_eval_std_grid": eval_std_grid,
+            "pgd_theta_mean_grid": theta_mean_grid,
+            "pgd_theta_std_grid": theta_std_grid,
+            "output_paths": np.asarray(output_paths, dtype=str),
+            "seeds": np.asarray(list(seeds), dtype=np.int32),
+        }
+        summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.npz"
+    else:
+        secondary_lengthscale_values = list(secondary_lengthscale_values)
+        eval_mean_grid = np.full(
+            (len(lambda_scales), len(secondary_lengthscale_values), len(lengthscale_values)),
+            np.nan,
+            dtype=np.float64,
+        )
+        eval_std_grid = np.full_like(eval_mean_grid, np.nan)
+        theta_mean_grid = np.full(
+            (len(lambda_scales), len(secondary_lengthscale_values), len(lengthscale_values), 2),
+            np.nan,
+            dtype=np.float64,
+        )
+        theta_std_grid = np.full_like(theta_mean_grid, np.nan)
+        output_paths = np.empty(
+            (len(lambda_scales), len(secondary_lengthscale_values), len(lengthscale_values)),
+            dtype=object,
+        )
 
-    summary = {
-        "grid_name": np.asarray("lengthscale_regularization_grid"),
-        "lengthscale_param": np.asarray(lengthscale_param),
-        "lengthscale_values": np.asarray(lengthscale_values, dtype=np.float64),
-        "lambda_scales": np.asarray(lambda_scales, dtype=np.float64),
-        "pgd_eval_mean_grid": eval_mean_grid,
-        "pgd_eval_std_grid": eval_std_grid,
-        "pgd_theta_mean_grid": theta_mean_grid,
-        "pgd_theta_std_grid": theta_std_grid,
-        "output_paths": np.asarray(output_paths, dtype=str),
-        "seeds": np.asarray(list(seeds), dtype=np.int32),
-    }
+        for lambda_idx, lambda_scale in enumerate(lambda_scales):
+            for secondary_idx, secondary_lengthscale_value in enumerate(secondary_lengthscale_values):
+                for ell_idx, lengthscale_value in enumerate(lengthscale_values):
+                    cell_kwargs = dict(run_kwargs)
+                    cell_kwargs["pgd_lambda_scale"] = lambda_scale
+                    cell_kwargs[lengthscale_param] = lengthscale_value
+                    cell_kwargs[secondary_lengthscale_param] = secondary_lengthscale_value
+                    if lengthscale_param == "pgd_ell_min":
+                        cell_kwargs["ell_eval"] = lengthscale_value
+                    if secondary_lengthscale_param == "pgd_ell_min":
+                        cell_kwargs["ell_eval"] = secondary_lengthscale_value
+                    output_path = output_dir / (
+                        f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
+                        f"_{secondary_lengthscale_param}_{_format_value_for_filename(secondary_lengthscale_value)}"
+                        f"_lambda_{_format_value_for_filename(lambda_scale)}.npz"
+                    )
+                    result = run_experiment(
+                        seeds=seeds,
+                        output_path=output_path,
+                        **cell_kwargs,
+                    )
+                    eval_mean_grid[lambda_idx, secondary_idx, ell_idx] = result["pgd_eval_mean"]
+                    eval_std_grid[lambda_idx, secondary_idx, ell_idx] = result["pgd_eval_std"]
+                    theta_mean_grid[lambda_idx, secondary_idx, ell_idx] = result["pgd_theta_mean"]
+                    theta_std_grid[lambda_idx, secondary_idx, ell_idx] = result["pgd_theta_std"]
+                    output_paths[lambda_idx, secondary_idx, ell_idx] = str(output_path)
 
-    summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.npz"
+        summary = {
+            "grid_name": np.asarray("lengthscale_pair_regularization_grid"),
+            "lengthscale_param": np.asarray(lengthscale_param),
+            "lengthscale_values": np.asarray(lengthscale_values, dtype=np.float64),
+            "secondary_lengthscale_param": np.asarray(secondary_lengthscale_param),
+            "secondary_lengthscale_values": np.asarray(secondary_lengthscale_values, dtype=np.float64),
+            "lambda_scales": np.asarray(lambda_scales, dtype=np.float64),
+            "pgd_eval_mean_grid": eval_mean_grid,
+            "pgd_eval_std_grid": eval_std_grid,
+            "pgd_theta_mean_grid": theta_mean_grid,
+            "pgd_theta_std_grid": theta_std_grid,
+            "output_paths": np.asarray(output_paths, dtype=str),
+            "seeds": np.asarray(list(seeds), dtype=np.int32),
+        }
+        summary_path = output_dir / (
+            f"{file_prefix}_{lengthscale_param}_{secondary_lengthscale_param}_summary.npz"
+        )
+
     save_results(summary, summary_path)
     summary["summary_path"] = str(summary_path)
     return summary
@@ -978,75 +1261,177 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
+    experiment_mode = "single_run"
+
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
-    standardize = False
-    ell_fixed = 30
-    ell_eval = 30
-    pgd_ell0 = 1000
-    pgd_ell_min =30
-    pgd_decay = 0.9995
-    sgd_gamma = 100
-    pgd_gamma = 100
-    pgd_lambda_scale = 1e-3
-    sgd_n_steps = 12000
-    pgd_n_steps = 12000
-    theta0_by_seed = np.tile(np.array([60.0, 60.0], dtype=np.float64), (10, 1))
-
-    result = run_experiment(
-        seeds=range(10),
-        output_path="lotka_volterra_results_60_60_12000_c35.npz",
-        corruption=0.35,
-        n_steps=max(sgd_n_steps, pgd_n_steps),
-        sgd_n_steps=sgd_n_steps,
-        pgd_n_steps=pgd_n_steps,
-        theta0_by_seed=theta0_by_seed,
+    sgd_n_steps = 30000
+    pgd_n_steps = 50000
+    # single_run_theta0_by_seed = np.tile(np.array([60.0, 60.0], dtype=np.float64), (10, 1))
+    single_run_theta0_by_seed = np.array(
+            [
+                [60.0, 60.0],
+                [90.0, 90.0],
+                [75.0, 75.0],
+                [70.0, 60.0],
+                [50.0, 60.0],
+            ],
+            dtype=np.float64,
+        )
+    single_run_kwargs = dict(
+        corruption=0.0,
         num_steps=50,
-        standardize=standardize,
-        ell_fixed=ell_fixed,
-        ell_eval=ell_eval,
-        pgd_ell0=pgd_ell0,
-        pgd_ell_min=pgd_ell_min,
-        pgd_decay=pgd_decay,
+        standardize=False,
+        ell_fixed=30,
+        ell_eval=30,
+        pgd_ell0=3000,
+        pgd_ell_min=30,
+        pgd_decay=0.9995,
         run_plain_sgd=True,
-        sgd_gamma=sgd_gamma,
-        pgd_gamma=pgd_gamma,
-        pgd_lambda_scale=pgd_lambda_scale,
+        run_adaptive_sgd=True,
+        run_fixed_pgd=True,
+        sgd_gamma=300,
+        pgd_gamma=300,
+        pgd_lambda_scale=1e-3,
         print_kernel_diagnostics=True,
         history_every=1,
         print_every=100,
     )
-    print("SGD MMD theta mean:", result["sgd_theta_mean"])
-    print("PGD theta mean:", result["pgd_theta_mean"])
+    ablation_kwargs = dict(
+        theta0_by_seed=np.array(
+            [
+                [60.0, 60.0],
+                [90.0, 90.0],
+                [75.0, 75.0],
+                [50.0, 60.0],
+                [50.0, 50.0],
+            ],
+            dtype=np.float64,
+        ),
+        corruption=0.45,
+        num_steps=50,
+        standardize=False,
+        ell_fixed=30,
+        ell_eval=30,
+        pgd_ell0=1000,
+        pgd_ell_min=30,
+        pgd_decay=0.9995,
+        run_plain_sgd=True,
+        run_adaptive_sgd=True,
+        run_fixed_pgd=True,
+        sgd_gamma=100,
+        pgd_gamma=100,
+        pgd_lambda_scale=1e-3,
+        print_kernel_diagnostics=True,
+        history_every=1,
+        print_every=100,
+    )
+    lengthscale_sweep_param = "pgd_ell_min"
+    lengthscale_sweep_values = [10.0, 30.0, 100.0, 300.0]
+    lengthscale_grid_param = "pgd_ell_min"
+    lengthscale_grid_values = [10.0, 30.0, 100.0, 300.0]
+    secondary_lengthscale_grid_param = "pgd_ell0"
+    secondary_lengthscale_grid_values = [100.0, 300.0, 1000.0, 3000.0]
+    decay_sweep_values = [0.8, 0.9, 0.95]
 
-    # summary = run_lengthscale_regularization_grid(
-    #     output_dir="ablations/lv_heatmap",
-    #     lengthscale_param="pgd_ell_min",
-    #     lengthscale_values=[10, 30, 100, 300],
-    #     lambda_scales=[1e-4, 1e-2, 1e-0],
+    if experiment_mode == "single_run":
+        result = run_experiment(
+            seeds=range(5),
+            output_path="lotka_volterra_results_pgd_vs_sgd.npz",
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            theta0_by_seed=single_run_theta0_by_seed,
+            **single_run_kwargs,
+        )
+        print("SGD MMD theta mean:", result["sgd_theta_mean"])
+        print("PGD theta mean:", result["pgd_theta_mean"])
 
-    #     pgd_ell0=1000.0,   # fixed here
-    #     pgd_decay=0.9995,
-    #     pgd_gamma=100,
-    #     ell_fixed=30.0,
-    #     ell_eval=30.0,
-    #     corruption=0.0,
-    #     theta0_by_seed=np.array(
-    #         [
-    #             [50.0, 60.0],
-    #             [90.0, 90.0],
-    #             [75.0, 75.0],
-    #             [55.0, 55.0],
-    #             [60.0, 60.0],
-    #         ],
-    #         dtype=np.float64,
-    #     ),
-    #     m_obs=100,
-    #     n_model=50,
-    #     sgd_n_steps=12000,
-    #     pgd_n_steps=15000,
-    #     num_steps=50,
-    #     T=1.0,
-    #     standardize=False,
-    #     seeds=range(5),
-    # )
+    elif experiment_mode == "step_size_ablation":
+        result = run_step_size_ablation(
+            output_dir="ablations/lv_gamma",
+            gamma_values=[1.0],#10.0, 30.0, 100.0, 300.0
+            sweep_param="pgd_gamma",
+            seeds=range(5),
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            **ablation_kwargs,
+        )
+        print("Step-size ablation summary:", result["summary_path"])
+
+    elif experiment_mode == "decay_ablation":
+        result = run_decay_ablation(
+            output_dir="ablations/lv_decay",
+            decay_values=decay_sweep_values,
+            sweep_param="pgd_decay",
+            seeds=range(5),
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            **ablation_kwargs,
+        )
+        print("Decay ablation summary:", result["summary_path"])
+
+    elif experiment_mode == "observation_model_grid":
+        result = run_observation_model_grid(
+            output_dir="ablations/lv_mn_grid",
+            m_obs_values=[50, 100, 200],
+            n_model_values=[1], #25, 50, 100, 200
+            seeds=range(5),
+            tie_target_batch_to_m_obs=True,
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            **ablation_kwargs,
+        )
+        print("Observation/model grid summary:", result["summary_path"])
+
+    elif experiment_mode == "lengthscale_ablation":
+        result = run_lengthscale_ablation(
+            output_dir="ablations/lv_lengthscale",
+            sweep_param=lengthscale_sweep_param,
+            sweep_values=lengthscale_sweep_values,
+            seeds=range(5),
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            **ablation_kwargs,
+        )
+        print("Lengthscale ablation summary:", result["summary_path"])
+
+    elif experiment_mode == "regularization_ablation":
+        result = run_regularization_ablation(
+            output_dir="ablations/lv_ridge",
+            lambda_scales=[1e-4, 1e-2, 1e0],
+            seeds=range(5),
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            **ablation_kwargs,
+        )
+        print("Regularization ablation summary:", result["summary_path"])
+
+    elif experiment_mode == "lengthscale_regularization_grid":
+        result = run_lengthscale_regularization_grid(
+            output_dir="ablations/lv_heatmap",
+            lengthscale_param=lengthscale_grid_param,
+            lengthscale_values=lengthscale_grid_values,
+            secondary_lengthscale_param=secondary_lengthscale_grid_param,
+            secondary_lengthscale_values=secondary_lengthscale_grid_values,
+            lambda_scales=[1e-3],
+            seeds=range(5),
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            **ablation_kwargs,
+        )
+        print("Lengthscale/regularization grid summary:", result["summary_path"])
+
+    else:
+        raise ValueError(
+            "experiment_mode must be one of "
+            "'single_run', 'step_size_ablation', 'decay_ablation', 'observation_model_grid', "
+            "'lengthscale_ablation', 'regularization_ablation', or "
+            "'lengthscale_regularization_grid'."
+        )

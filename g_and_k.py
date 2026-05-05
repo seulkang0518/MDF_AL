@@ -276,9 +276,11 @@ def run_baseline_sgd(
     gamma_sgd,
     ell_fixed,
     ell_eval,
+    ell_schedule=None,
     n_eval_model=2000,
     print_every=20,
     history_every=1,
+    method_label="SGD",
 ):
     key = jax.random.PRNGKey(seed + 1000)
     phi = theta_to_phi(theta0)
@@ -303,7 +305,8 @@ def run_baseline_sgd(
             maxval=y_obs_full.shape[0],
         )
         y_batch = y_obs_full[idx]
-        ell_t = jnp.asarray(ell_fixed, dtype=jnp.float64)
+        ell_value = ell_fixed if ell_schedule is None else ell_schedule[t]
+        ell_t = jnp.asarray(ell_value, dtype=jnp.float64)
         ell_eval_t = jnp.asarray(ell_eval, dtype=jnp.float64)
 
         phi, train_loss, grad_theta, theta_delta, jac_col_norms = gd_step_phi(
@@ -346,7 +349,7 @@ def run_baseline_sgd(
                 )
 
             print(
-                f"[SGD] step={t:4d} | ell={float(ell_t):.4f} | "
+                f"[{method_label}] step={t:4d} | ell={float(ell_t):.4f} | "
                 f"gamma={float(gamma_sgd):.6f} | "
                 f"train_loss={float(train_loss):.8f} | "
                 f"eval_loss={float(last_eval_loss):.8f}"
@@ -483,9 +486,11 @@ def run_adaptive_pgd(
     ell_min,
     decay,
     ell_eval,
+    ell_schedule=None,
     n_eval_model=2000,
     print_every=20,
     history_every=1,
+    method_label="PGD",
 ):
     key = jax.random.PRNGKey(seed + 2000)
     phi = theta_to_phi(theta0)
@@ -502,7 +507,12 @@ def run_adaptive_pgd(
     last_train_loss = None
     last_eval_loss = None
 
-    ell_schedule = make_adaptive_ell_schedule(n_steps_pgd, ell0, ell_min, decay)
+    if ell_schedule is None:
+        ell_schedule = make_adaptive_ell_schedule(n_steps_pgd, ell0, ell_min, decay)
+    else:
+        ell_schedule = np.asarray(ell_schedule, dtype=np.float64)
+        if ell_schedule.shape[0] != n_steps_pgd:
+            raise ValueError("ell_schedule must have length n_steps_pgd.")
 
     for t in range(n_steps_pgd):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
@@ -585,7 +595,7 @@ def run_adaptive_pgd(
                 )
 
             print(
-                f"[PGD] step={t:4d} | ell={float(ell_t):.4f} | "
+                f"[{method_label}] step={t:4d} | ell={float(ell_t):.4f} | "
                 f"gamma={float(gamma_t):.6f} | lambda={float(lambda_t):.6f} | "
                 f"train_loss={float(train_loss):.8f} | "
                 f"eval_loss={float(last_eval_loss):.8f}"
@@ -637,6 +647,8 @@ def run_baseline_and_adaptive(
     history_every=1,
     run_baseline=True,
     run_natural=True,
+    run_adaptive_sgd=False,
+    run_fixed_pgd=False,
 ):
     theta_true = jnp.array(theta_true, dtype=jnp.float64)
     y_obs_full, theta0 = make_target_and_init(seed, theta_true, n_obs_full, theta0=theta0)
@@ -644,6 +656,8 @@ def run_baseline_and_adaptive(
     natural_damping = lambda_scale if natural_damping is None else natural_damping
 
     result = {}
+    adaptive_ell_schedule_sgd = make_adaptive_ell_schedule(n_steps_sgd, ell0, ell_min, decay)
+    fixed_ell_schedule_pgd = np.full((n_steps_pgd,), ell_min, dtype=np.float64)
 
     if run_baseline:
         print("\n=== Plain SGD baseline (fixed lengthscale, no preconditioning) ===")
@@ -676,6 +690,42 @@ def run_baseline_and_adaptive(
                 "baseline_theta_delta_history": baseline_res["theta_delta_history"],
                 "baseline_jac_col_norm_history": baseline_res["jac_col_norm_history"],
                 "baseline_elapsed_seconds": np.asarray(baseline_elapsed_seconds, dtype=np.float64),
+            }
+        )
+
+    if run_adaptive_sgd:
+        print("\n=== Plain SGD with adaptive lengthscale schedule ===")
+        adaptive_sgd_start = time.perf_counter()
+        adaptive_sgd_res = run_baseline_sgd(
+            seed=seed,
+            theta0=theta0,
+            y_obs_full=y_obs_full,
+            target_batch_size=target_batch_size,
+            n_model=n_model,
+            n_steps_sgd=n_steps_sgd,
+            gamma_sgd=gamma_sgd,
+            ell_fixed=ell_fixed,
+            ell_eval=ell_min,
+            ell_schedule=adaptive_ell_schedule_sgd,
+            n_eval_model=n_eval_model,
+            print_every=20,
+            history_every=history_every,
+            method_label="SGD-adaptive-ell",
+        )
+        adaptive_sgd_elapsed_seconds = time.perf_counter() - adaptive_sgd_start
+        result.update(
+            {
+                "adaptive_sgd_theta_final": adaptive_sgd_res["theta_final"],
+                "adaptive_sgd_train_loss_final": adaptive_sgd_res["train_loss_final"],
+                "adaptive_sgd_eval_loss_final": adaptive_sgd_res["eval_loss_final"],
+                "adaptive_sgd_history_steps": adaptive_sgd_res["history_steps"],
+                "adaptive_sgd_train_loss_history": adaptive_sgd_res["train_loss_history"],
+                "adaptive_sgd_eval_loss_history": adaptive_sgd_res["eval_loss_history"],
+                "adaptive_sgd_theta_history": adaptive_sgd_res["theta_history"],
+                "adaptive_sgd_grad_theta_history": adaptive_sgd_res["grad_theta_history"],
+                "adaptive_sgd_theta_delta_history": adaptive_sgd_res["theta_delta_history"],
+                "adaptive_sgd_jac_col_norm_history": adaptive_sgd_res["jac_col_norm_history"],
+                "adaptive_sgd_elapsed_seconds": np.asarray(adaptive_sgd_elapsed_seconds, dtype=np.float64),
             }
         )
 
@@ -753,6 +803,47 @@ def run_baseline_and_adaptive(
         }
     )
 
+    if run_fixed_pgd:
+        print("\n=== PGD with fixed lengthscale ell_infty ===")
+        fixed_pgd_start = time.perf_counter()
+        fixed_pgd_res = run_adaptive_pgd(
+            seed=seed,
+            theta0=theta0,
+            y_obs_full=y_obs_full,
+            target_batch_size=target_batch_size,
+            n_model=n_model,
+            n_steps_pgd=n_steps_pgd,
+            gamma_pgd0=gamma_pgd0,
+            lambda_scale=lambda_scale,
+            ell0=ell0,
+            ell_min=ell_min,
+            decay=decay,
+            ell_eval=ell_min,
+            ell_schedule=fixed_ell_schedule_pgd,
+            n_eval_model=n_eval_model,
+            print_every=20,
+            history_every=history_every,
+            method_label="PGD-fixed-ell",
+        )
+        fixed_pgd_elapsed_seconds = time.perf_counter() - fixed_pgd_start
+        result.update(
+            {
+                "fixed_pgd_theta_final": fixed_pgd_res["theta_final"],
+                "fixed_pgd_train_loss_final": fixed_pgd_res["train_loss_final"],
+                "fixed_pgd_eval_loss_final": fixed_pgd_res["eval_loss_final"],
+                "fixed_pgd_history_steps": fixed_pgd_res["history_steps"],
+                "fixed_pgd_train_loss_history": fixed_pgd_res["train_loss_history"],
+                "fixed_pgd_eval_loss_history": fixed_pgd_res["eval_loss_history"],
+                "fixed_pgd_theta_history": fixed_pgd_res["theta_history"],
+                "fixed_pgd_direction_history": fixed_pgd_res["direction_history"],
+                "fixed_pgd_theta_delta_history": fixed_pgd_res["theta_delta_history"],
+                "fixed_pgd_jac_col_norm_history": fixed_pgd_res["jac_col_norm_history"],
+                "fixed_pgd_lhs_history": fixed_pgd_res["lhs_history"],
+                "fixed_pgd_rhs_history": fixed_pgd_res["rhs_history"],
+                "fixed_pgd_elapsed_seconds": np.asarray(fixed_pgd_elapsed_seconds, dtype=np.float64),
+            }
+        )
+
     return result
 
 
@@ -828,6 +919,8 @@ def run_grid_over_n_model(
     history_every=1,
     run_baseline=True,
     run_natural=True,
+    run_adaptive_sgd=False,
+    run_fixed_pgd=False,
 ):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -838,6 +931,8 @@ def run_grid_over_n_model(
         if theta0 is None
         else np.array(theta0, dtype=np.float64)
     )
+    if theta0_value.ndim > 1:
+        theta0_value = np.asarray(theta0_value[0], dtype=np.float64)
     theta0_tag = _format_theta_for_filename(theta0_value)
     gamma_natural_sgd_value = gamma_sgd if gamma_natural_sgd is None else gamma_natural_sgd
     natural_damping_value = lambda_scale if natural_damping is None else natural_damping
@@ -880,6 +975,8 @@ def run_grid_over_n_model(
                     history_every=history_every,
                     run_baseline=run_baseline,
                     run_natural=run_natural,
+                    run_adaptive_sgd=run_adaptive_sgd,
+                    run_fixed_pgd=run_fixed_pgd,
                 )
             )
 
@@ -956,6 +1053,8 @@ def run_grid_over_n_model(
             "last_adapt_rhs": adaptive_rhs_histories[-1],
             "run_baseline": np.array(run_baseline, dtype=np.bool_),
             "run_natural": np.array(run_natural, dtype=np.bool_),
+            "run_adaptive_sgd": np.array(run_adaptive_sgd, dtype=np.bool_),
+            "run_fixed_pgd": np.array(run_fixed_pgd, dtype=np.bool_),
             "uses_theta0_by_seed": np.array(theta0_by_seed is not None, dtype=np.bool_),
         }
 
@@ -1052,6 +1151,100 @@ def run_grid_over_n_model(
                 }
             )
 
+        if run_adaptive_sgd:
+            adaptive_sgd_train = _stack([res["adaptive_sgd_train_loss_final"] for res in per_seed])
+            adaptive_sgd_eval = _stack([res["adaptive_sgd_eval_loss_final"] for res in per_seed])
+            adaptive_sgd_thetas = _stack([res["adaptive_sgd_theta_final"] for res in per_seed])
+            adaptive_sgd_history_steps = np.array(per_seed[0]["adaptive_sgd_history_steps"], dtype=np.int32)
+            adaptive_sgd_train_histories = _stack([res["adaptive_sgd_train_loss_history"] for res in per_seed])
+            adaptive_sgd_eval_histories = _stack([res["adaptive_sgd_eval_loss_history"] for res in per_seed])
+            adaptive_sgd_theta_histories = _stack([res["adaptive_sgd_theta_history"] for res in per_seed])
+            adaptive_sgd_grad_theta_histories = _stack([res["adaptive_sgd_grad_theta_history"] for res in per_seed])
+            adaptive_sgd_theta_delta_histories = _stack([res["adaptive_sgd_theta_delta_history"] for res in per_seed])
+            adaptive_sgd_jac_col_norm_histories = _stack([res["adaptive_sgd_jac_col_norm_history"] for res in per_seed])
+            adaptive_sgd_elapsed_seconds = _stack([res["adaptive_sgd_elapsed_seconds"] for res in per_seed])
+            results.update(
+                {
+                    "adaptive_sgd_train_losses": adaptive_sgd_train,
+                    "adaptive_sgd_eval_losses": adaptive_sgd_eval,
+                    "adaptive_sgd_thetas": adaptive_sgd_thetas,
+                    "adaptive_sgd_theta_mean": np.mean(adaptive_sgd_thetas, axis=0),
+                    "adaptive_sgd_theta_std": np.std(adaptive_sgd_thetas, axis=0),
+                    "adaptive_sgd_train_mean": np.mean(adaptive_sgd_train),
+                    "adaptive_sgd_train_std": np.std(adaptive_sgd_train),
+                    "adaptive_sgd_eval_mean": np.mean(adaptive_sgd_eval),
+                    "adaptive_sgd_eval_std": np.std(adaptive_sgd_eval),
+                    "adaptive_sgd_elapsed_seconds": adaptive_sgd_elapsed_seconds,
+                    "adaptive_sgd_elapsed_mean": np.mean(adaptive_sgd_elapsed_seconds),
+                    "adaptive_sgd_elapsed_std": np.std(adaptive_sgd_elapsed_seconds),
+                    "adaptive_sgd_elapsed_se": np.std(adaptive_sgd_elapsed_seconds)
+                    / np.sqrt(max(len(adaptive_sgd_elapsed_seconds), 1)),
+                    "adaptive_sgd_history_steps": adaptive_sgd_history_steps,
+                    "adaptive_sgd_train_histories": adaptive_sgd_train_histories,
+                    "adaptive_sgd_eval_histories": adaptive_sgd_eval_histories,
+                    "adaptive_sgd_theta_histories": adaptive_sgd_theta_histories,
+                    "adaptive_sgd_grad_theta_histories": adaptive_sgd_grad_theta_histories,
+                    "adaptive_sgd_theta_delta_histories": adaptive_sgd_theta_delta_histories,
+                    "adaptive_sgd_jac_col_norm_histories": adaptive_sgd_jac_col_norm_histories,
+                    "adaptive_sgd_train_history_mean": np.mean(adaptive_sgd_train_histories, axis=0),
+                    "adaptive_sgd_eval_history_mean": np.mean(adaptive_sgd_eval_histories, axis=0),
+                    "adaptive_sgd_theta_history_mean": np.mean(adaptive_sgd_theta_histories, axis=0),
+                    "adaptive_sgd_grad_theta_history_mean": np.mean(adaptive_sgd_grad_theta_histories, axis=0),
+                    "adaptive_sgd_theta_delta_history_mean": np.mean(adaptive_sgd_theta_delta_histories, axis=0),
+                    "adaptive_sgd_jac_col_norm_history_mean": np.mean(adaptive_sgd_jac_col_norm_histories, axis=0),
+                }
+            )
+
+        if run_fixed_pgd:
+            fixed_pgd_train = _stack([res["fixed_pgd_train_loss_final"] for res in per_seed])
+            fixed_pgd_eval = _stack([res["fixed_pgd_eval_loss_final"] for res in per_seed])
+            fixed_pgd_thetas = _stack([res["fixed_pgd_theta_final"] for res in per_seed])
+            fixed_pgd_history_steps = np.array(per_seed[0]["fixed_pgd_history_steps"], dtype=np.int32)
+            fixed_pgd_train_histories = _stack([res["fixed_pgd_train_loss_history"] for res in per_seed])
+            fixed_pgd_eval_histories = _stack([res["fixed_pgd_eval_loss_history"] for res in per_seed])
+            fixed_pgd_theta_histories = _stack([res["fixed_pgd_theta_history"] for res in per_seed])
+            fixed_pgd_direction_histories = _stack([res["fixed_pgd_direction_history"] for res in per_seed])
+            fixed_pgd_theta_delta_histories = _stack([res["fixed_pgd_theta_delta_history"] for res in per_seed])
+            fixed_pgd_jac_col_norm_histories = _stack([res["fixed_pgd_jac_col_norm_history"] for res in per_seed])
+            fixed_pgd_lhs_histories = _stack([res["fixed_pgd_lhs_history"] for res in per_seed])
+            fixed_pgd_rhs_histories = _stack([res["fixed_pgd_rhs_history"] for res in per_seed])
+            fixed_pgd_elapsed_seconds = _stack([res["fixed_pgd_elapsed_seconds"] for res in per_seed])
+            results.update(
+                {
+                    "fixed_pgd_train_losses": fixed_pgd_train,
+                    "fixed_pgd_eval_losses": fixed_pgd_eval,
+                    "fixed_pgd_thetas": fixed_pgd_thetas,
+                    "fixed_pgd_theta_mean": np.mean(fixed_pgd_thetas, axis=0),
+                    "fixed_pgd_theta_std": np.std(fixed_pgd_thetas, axis=0),
+                    "fixed_pgd_train_mean": np.mean(fixed_pgd_train),
+                    "fixed_pgd_train_std": np.std(fixed_pgd_train),
+                    "fixed_pgd_eval_mean": np.mean(fixed_pgd_eval),
+                    "fixed_pgd_eval_std": np.std(fixed_pgd_eval),
+                    "fixed_pgd_elapsed_seconds": fixed_pgd_elapsed_seconds,
+                    "fixed_pgd_elapsed_mean": np.mean(fixed_pgd_elapsed_seconds),
+                    "fixed_pgd_elapsed_std": np.std(fixed_pgd_elapsed_seconds),
+                    "fixed_pgd_elapsed_se": np.std(fixed_pgd_elapsed_seconds)
+                    / np.sqrt(max(len(fixed_pgd_elapsed_seconds), 1)),
+                    "fixed_pgd_history_steps": fixed_pgd_history_steps,
+                    "fixed_pgd_train_histories": fixed_pgd_train_histories,
+                    "fixed_pgd_eval_histories": fixed_pgd_eval_histories,
+                    "fixed_pgd_theta_histories": fixed_pgd_theta_histories,
+                    "fixed_pgd_direction_histories": fixed_pgd_direction_histories,
+                    "fixed_pgd_theta_delta_histories": fixed_pgd_theta_delta_histories,
+                    "fixed_pgd_jac_col_norm_histories": fixed_pgd_jac_col_norm_histories,
+                    "fixed_pgd_lhs_histories": fixed_pgd_lhs_histories,
+                    "fixed_pgd_rhs_histories": fixed_pgd_rhs_histories,
+                    "fixed_pgd_train_history_mean": np.mean(fixed_pgd_train_histories, axis=0),
+                    "fixed_pgd_eval_history_mean": np.mean(fixed_pgd_eval_histories, axis=0),
+                    "fixed_pgd_theta_history_mean": np.mean(fixed_pgd_theta_histories, axis=0),
+                    "fixed_pgd_direction_history_mean": np.mean(fixed_pgd_direction_histories, axis=0),
+                    "fixed_pgd_theta_delta_history_mean": np.mean(fixed_pgd_theta_delta_histories, axis=0),
+                    "fixed_pgd_jac_col_norm_history_mean": np.mean(fixed_pgd_jac_col_norm_histories, axis=0),
+                    "fixed_pgd_lhs_history_mean": np.mean(fixed_pgd_lhs_histories, axis=0),
+                    "fixed_pgd_rhs_history_mean": np.mean(fixed_pgd_rhs_histories, axis=0),
+                }
+            )
+
         output_path = output_dir / f"g_n_k_fixed{n_model}_theta0_{theta0_tag}.npz"
         save_results(results, output_path)
         summary[int(n_model)] = {
@@ -1071,6 +1264,20 @@ def run_grid_over_n_model(
                 {
                     "natural_eval_mean": float(results["natural_eval_mean"]),
                     "natural_theta_mean": results["natural_theta_mean"].tolist(),
+                }
+            )
+        if run_adaptive_sgd:
+            summary[int(n_model)].update(
+                {
+                    "adaptive_sgd_eval_mean": float(results["adaptive_sgd_eval_mean"]),
+                    "adaptive_sgd_theta_mean": results["adaptive_sgd_theta_mean"].tolist(),
+                }
+            )
+        if run_fixed_pgd:
+            summary[int(n_model)].update(
+                {
+                    "fixed_pgd_eval_mean": float(results["fixed_pgd_eval_mean"]),
+                    "fixed_pgd_theta_mean": results["fixed_pgd_theta_mean"].tolist(),
                 }
             )
 
@@ -1101,6 +1308,8 @@ def run_for_n_model(
     history_every=1,
     run_baseline=True,
     run_natural=True,
+    run_adaptive_sgd=False,
+    run_fixed_pgd=False,
 ):
     summary = run_grid_over_n_model(
         seeds=seeds,
@@ -1126,6 +1335,8 @@ def run_for_n_model(
         history_every=history_every,
         run_baseline=run_baseline,
         run_natural=run_natural,
+        run_adaptive_sgd=run_adaptive_sgd,
+        run_fixed_pgd=run_fixed_pgd,
     )
     return summary[int(n_model)]
 
@@ -1168,24 +1379,8 @@ def run_ablation_for_n_model(
         "output_paths": np.asarray(output_paths, dtype=str),
         "n_model": np.asarray(n_model, dtype=np.int32),
         "seeds": np.asarray(list(seeds), dtype=np.int32),
-        "baseline_eval_means": np.asarray(
-            [summary["baseline_eval_mean"] for summary in per_value_summaries],
-            dtype=np.float64,
-        ),
         "adaptive_eval_means": np.asarray(
             [summary["adaptive_eval_mean"] for summary in per_value_summaries],
-            dtype=np.float64,
-        ),
-        "natural_eval_means": np.asarray(
-            [summary["natural_eval_mean"] for summary in per_value_summaries],
-            dtype=np.float64,
-        ),
-        "baseline_theta_means": np.asarray(
-            [summary["baseline_theta_mean"] for summary in per_value_summaries],
-            dtype=np.float64,
-        ),
-        "natural_theta_means": np.asarray(
-            [summary["natural_theta_mean"] for summary in per_value_summaries],
             dtype=np.float64,
         ),
         "adaptive_theta_means": np.asarray(
@@ -1193,6 +1388,26 @@ def run_ablation_for_n_model(
             dtype=np.float64,
         ),
     }
+
+    if all("baseline_eval_mean" in summary for summary in per_value_summaries):
+        aggregated["baseline_eval_means"] = np.asarray(
+            [summary["baseline_eval_mean"] for summary in per_value_summaries],
+            dtype=np.float64,
+        )
+        aggregated["baseline_theta_means"] = np.asarray(
+            [summary["baseline_theta_mean"] for summary in per_value_summaries],
+            dtype=np.float64,
+        )
+
+    if all("natural_eval_mean" in summary for summary in per_value_summaries):
+        aggregated["natural_eval_means"] = np.asarray(
+            [summary["natural_eval_mean"] for summary in per_value_summaries],
+            dtype=np.float64,
+        )
+        aggregated["natural_theta_means"] = np.asarray(
+            [summary["natural_theta_mean"] for summary in per_value_summaries],
+            dtype=np.float64,
+        )
 
     summary_path = output_dir / f"{file_prefix}_{sweep_name}_summary.npz"
     save_results(aggregated, summary_path)
@@ -1247,6 +1462,135 @@ def run_regularization_ablation_for_n_model(
     )
 
 
+def run_step_size_ablation_for_n_model(
+    n_model,
+    seeds,
+    output_dir,
+    gamma_values,
+    sweep_param="gamma_pgd0",
+    file_prefix="g_and_k_step_size_ablation",
+    **kwargs,
+):
+    run_kwargs = dict(kwargs)
+    run_kwargs.setdefault("run_baseline", False)
+    run_kwargs.setdefault("run_natural", False)
+    return run_ablation_for_n_model(
+        n_model=n_model,
+        seeds=seeds,
+        output_dir=output_dir,
+        sweep_name=f"{sweep_param}_sweep",
+        sweep_param=sweep_param,
+        sweep_values=gamma_values,
+        file_prefix=file_prefix,
+        **run_kwargs,
+    )
+
+
+def run_decay_ablation_for_n_model(
+    n_model,
+    seeds,
+    output_dir,
+    decay_values,
+    sweep_param="decay",
+    file_prefix="g_and_k_decay_ablation",
+    **kwargs,
+):
+    run_kwargs = dict(kwargs)
+    run_kwargs.setdefault("run_baseline", False)
+    run_kwargs.setdefault("run_natural", False)
+    return run_ablation_for_n_model(
+        n_model=n_model,
+        seeds=seeds,
+        output_dir=output_dir,
+        sweep_name=f"{sweep_param}_sweep",
+        sweep_param=sweep_param,
+        sweep_values=decay_values,
+        file_prefix=file_prefix,
+        **run_kwargs,
+    )
+
+
+def run_observation_model_grid(
+    seeds,
+    n_obs_full_values,
+    n_model_values,
+    output_dir,
+    file_prefix="g_and_k_observation_model_grid",
+    tie_target_batch_to_n_obs=True,
+    **kwargs,
+):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    n_obs_full_values = list(n_obs_full_values)
+    n_model_values = list(n_model_values)
+
+    adaptive_eval_mean_grid = np.full(
+        (len(n_obs_full_values), len(n_model_values)),
+        np.nan,
+        dtype=np.float64,
+    )
+    adaptive_theta_mean_grid = np.full(
+        (len(n_obs_full_values), len(n_model_values), 4),
+        np.nan,
+        dtype=np.float64,
+    )
+    baseline_eval_mean_grid = np.full_like(adaptive_eval_mean_grid, np.nan)
+    natural_eval_mean_grid = np.full_like(adaptive_eval_mean_grid, np.nan)
+    output_paths = np.empty((len(n_obs_full_values), len(n_model_values)), dtype=object)
+
+    for obs_idx, n_obs_full in enumerate(n_obs_full_values):
+        for model_idx, n_model in enumerate(n_model_values):
+            cell_kwargs = dict(kwargs)
+            cell_kwargs["n_obs_full"] = n_obs_full
+            if tie_target_batch_to_n_obs:
+                cell_kwargs["target_batch_size"] = n_obs_full
+
+            cell_output_dir = output_dir / (
+                f"{file_prefix}_m_{_format_value_for_filename(n_obs_full)}"
+                f"_n_{_format_value_for_filename(n_model)}"
+            )
+            cell_output_dir.mkdir(parents=True, exist_ok=True)
+            summary = run_for_n_model(
+                n_model=n_model,
+                seeds=seeds,
+                output_dir=cell_output_dir,
+                **cell_kwargs,
+            )
+
+            adaptive_eval_mean_grid[obs_idx, model_idx] = summary["adaptive_eval_mean"]
+            adaptive_theta_mean_grid[obs_idx, model_idx] = np.asarray(
+                summary["adaptive_theta_mean"],
+                dtype=np.float64,
+            )
+            if "baseline_eval_mean" in summary:
+                baseline_eval_mean_grid[obs_idx, model_idx] = summary["baseline_eval_mean"]
+            if "natural_eval_mean" in summary:
+                natural_eval_mean_grid[obs_idx, model_idx] = summary["natural_eval_mean"]
+            output_paths[obs_idx, model_idx] = summary["output_path"]
+
+    aggregated = {
+        "grid_name": np.asarray("observation_model_grid"),
+        "n_obs_full_values": np.asarray(n_obs_full_values, dtype=np.int32),
+        "n_model_values": np.asarray(n_model_values, dtype=np.int32),
+        "adaptive_eval_mean_grid": adaptive_eval_mean_grid,
+        "adaptive_theta_mean_grid": adaptive_theta_mean_grid,
+        "output_paths": np.asarray(output_paths, dtype=str),
+        "seeds": np.asarray(list(seeds), dtype=np.int32),
+        "tie_target_batch_to_n_obs": np.asarray(tie_target_batch_to_n_obs, dtype=np.bool_),
+    }
+
+    if np.isfinite(baseline_eval_mean_grid).any():
+        aggregated["baseline_eval_mean_grid"] = baseline_eval_mean_grid
+    if np.isfinite(natural_eval_mean_grid).any():
+        aggregated["natural_eval_mean_grid"] = natural_eval_mean_grid
+
+    summary_path = output_dir / f"{file_prefix}_summary.npz"
+    save_results(aggregated, summary_path)
+    aggregated["summary_path"] = str(summary_path)
+    return aggregated
+
+
 def run_lengthscale_regularization_grid_for_n_model(
     n_model,
     seeds,
@@ -1254,6 +1598,8 @@ def run_lengthscale_regularization_grid_for_n_model(
     lengthscale_param,
     lengthscale_values,
     lambda_scales,
+    secondary_lengthscale_param=None,
+    secondary_lengthscale_values=None,
     file_prefix="g_and_k_lengthscale_regularization_grid",
     **kwargs,
 ):
@@ -1267,43 +1613,103 @@ def run_lengthscale_regularization_grid_for_n_model(
     lengthscale_values = list(lengthscale_values)
     lambda_scales = list(lambda_scales)
 
-    eval_mean_grid = np.full((len(lambda_scales), len(lengthscale_values)), np.nan, dtype=np.float64)
-    theta_mean_grid = np.full((len(lambda_scales), len(lengthscale_values), 4), np.nan, dtype=np.float64)
-    output_paths = np.empty((len(lambda_scales), len(lengthscale_values)), dtype=object)
+    if secondary_lengthscale_param is None:
+        eval_mean_grid = np.full((len(lambda_scales), len(lengthscale_values)), np.nan, dtype=np.float64)
+        theta_mean_grid = np.full((len(lambda_scales), len(lengthscale_values), 4), np.nan, dtype=np.float64)
+        output_paths = np.empty((len(lambda_scales), len(lengthscale_values)), dtype=object)
 
-    for lambda_idx, lambda_scale in enumerate(lambda_scales):
-        for ell_idx, lengthscale_value in enumerate(lengthscale_values):
-            cell_kwargs = dict(run_kwargs)
-            cell_kwargs["lambda_scale"] = lambda_scale
-            cell_kwargs[lengthscale_param] = lengthscale_value
-            sweep_output_dir = output_dir / (
-                f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
-                f"_lambda_{_format_value_for_filename(lambda_scale)}"
-            )
-            sweep_output_dir.mkdir(parents=True, exist_ok=True)
-            summary = run_for_n_model(
-                n_model=n_model,
-                seeds=seeds,
-                output_dir=sweep_output_dir,
-                **cell_kwargs,
-            )
-            eval_mean_grid[lambda_idx, ell_idx] = summary["adaptive_eval_mean"]
-            theta_mean_grid[lambda_idx, ell_idx] = np.asarray(summary["adaptive_theta_mean"], dtype=np.float64)
-            output_paths[lambda_idx, ell_idx] = summary["output_path"]
+        for lambda_idx, lambda_scale in enumerate(lambda_scales):
+            for ell_idx, lengthscale_value in enumerate(lengthscale_values):
+                cell_kwargs = dict(run_kwargs)
+                cell_kwargs["lambda_scale"] = lambda_scale
+                cell_kwargs[lengthscale_param] = lengthscale_value
+                sweep_output_dir = output_dir / (
+                    f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
+                    f"_lambda_{_format_value_for_filename(lambda_scale)}"
+                )
+                sweep_output_dir.mkdir(parents=True, exist_ok=True)
+                summary = run_for_n_model(
+                    n_model=n_model,
+                    seeds=seeds,
+                    output_dir=sweep_output_dir,
+                    **cell_kwargs,
+                )
+                eval_mean_grid[lambda_idx, ell_idx] = summary["adaptive_eval_mean"]
+                theta_mean_grid[lambda_idx, ell_idx] = np.asarray(summary["adaptive_theta_mean"], dtype=np.float64)
+                output_paths[lambda_idx, ell_idx] = summary["output_path"]
 
-    aggregated = {
-        "grid_name": np.asarray("lengthscale_regularization_grid"),
-        "lengthscale_param": np.asarray(lengthscale_param),
-        "lengthscale_values": np.asarray(lengthscale_values, dtype=np.float64),
-        "lambda_scales": np.asarray(lambda_scales, dtype=np.float64),
-        "adaptive_eval_mean_grid": eval_mean_grid,
-        "adaptive_theta_mean_grid": theta_mean_grid,
-        "output_paths": np.asarray(output_paths, dtype=str),
-        "n_model": np.asarray(n_model, dtype=np.int32),
-        "seeds": np.asarray(list(seeds), dtype=np.int32),
-    }
+        aggregated = {
+            "grid_name": np.asarray("lengthscale_regularization_grid"),
+            "lengthscale_param": np.asarray(lengthscale_param),
+            "lengthscale_values": np.asarray(lengthscale_values, dtype=np.float64),
+            "lambda_scales": np.asarray(lambda_scales, dtype=np.float64),
+            "adaptive_eval_mean_grid": eval_mean_grid,
+            "adaptive_theta_mean_grid": theta_mean_grid,
+            "output_paths": np.asarray(output_paths, dtype=str),
+            "n_model": np.asarray(n_model, dtype=np.int32),
+            "seeds": np.asarray(list(seeds), dtype=np.int32),
+        }
+        summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.npz"
+    else:
+        secondary_lengthscale_values = list(secondary_lengthscale_values)
+        eval_mean_grid = np.full(
+            (len(lambda_scales), len(secondary_lengthscale_values), len(lengthscale_values)),
+            np.nan,
+            dtype=np.float64,
+        )
+        theta_mean_grid = np.full(
+            (len(lambda_scales), len(secondary_lengthscale_values), len(lengthscale_values), 4),
+            np.nan,
+            dtype=np.float64,
+        )
+        output_paths = np.empty(
+            (len(lambda_scales), len(secondary_lengthscale_values), len(lengthscale_values)),
+            dtype=object,
+        )
 
-    summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.npz"
+        for lambda_idx, lambda_scale in enumerate(lambda_scales):
+            for secondary_idx, secondary_lengthscale_value in enumerate(secondary_lengthscale_values):
+                for ell_idx, lengthscale_value in enumerate(lengthscale_values):
+                    cell_kwargs = dict(run_kwargs)
+                    cell_kwargs["lambda_scale"] = lambda_scale
+                    cell_kwargs[lengthscale_param] = lengthscale_value
+                    cell_kwargs[secondary_lengthscale_param] = secondary_lengthscale_value
+                    sweep_output_dir = output_dir / (
+                        f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
+                        f"_{secondary_lengthscale_param}_{_format_value_for_filename(secondary_lengthscale_value)}"
+                        f"_lambda_{_format_value_for_filename(lambda_scale)}"
+                    )
+                    sweep_output_dir.mkdir(parents=True, exist_ok=True)
+                    summary = run_for_n_model(
+                        n_model=n_model,
+                        seeds=seeds,
+                        output_dir=sweep_output_dir,
+                        **cell_kwargs,
+                    )
+                    eval_mean_grid[lambda_idx, secondary_idx, ell_idx] = summary["adaptive_eval_mean"]
+                    theta_mean_grid[lambda_idx, secondary_idx, ell_idx] = np.asarray(
+                        summary["adaptive_theta_mean"],
+                        dtype=np.float64,
+                    )
+                    output_paths[lambda_idx, secondary_idx, ell_idx] = summary["output_path"]
+
+        aggregated = {
+            "grid_name": np.asarray("lengthscale_pair_regularization_grid"),
+            "lengthscale_param": np.asarray(lengthscale_param),
+            "lengthscale_values": np.asarray(lengthscale_values, dtype=np.float64),
+            "secondary_lengthscale_param": np.asarray(secondary_lengthscale_param),
+            "secondary_lengthscale_values": np.asarray(secondary_lengthscale_values, dtype=np.float64),
+            "lambda_scales": np.asarray(lambda_scales, dtype=np.float64),
+            "adaptive_eval_mean_grid": eval_mean_grid,
+            "adaptive_theta_mean_grid": theta_mean_grid,
+            "output_paths": np.asarray(output_paths, dtype=str),
+            "n_model": np.asarray(n_model, dtype=np.int32),
+            "seeds": np.asarray(list(seeds), dtype=np.int32),
+        }
+        summary_path = output_dir / (
+            f"{file_prefix}_{lengthscale_param}_{secondary_lengthscale_param}_summary.npz"
+        )
+
     save_results(aggregated, summary_path)
     aggregated["summary_path"] = str(summary_path)
     return aggregated
@@ -1314,16 +1720,25 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    result = run_for_n_model(
-        n_model=600,
-        seeds=range(10),  # Add 1,2,... here for multi-seed runs. ,1,2,3,4,5,6,7,8,9
-        output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL",
+    experiment_mode = "single_run"
+
+    single_run_theta0_by_seed = np.array(
+        [
+            [3.5, 2.0, 0.6, -0.8],
+            [3.4, 1.9, 0.7, -0.75],
+            [2.0, 2.1, 0.5, -0.85],
+            [2.0, 2.0, 1.3, -0.6],
+            [3.7, 1.8, 0.6, -0.9],
+        ],
+        dtype=np.float64,
+    )
+    single_run_kwargs = dict(
         theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-        theta0=np.array([3.5,2.0,0.6,-0.8], dtype=np.float64),
+        theta0_by_seed=single_run_theta0_by_seed,
         n_obs_full=1000,
         target_batch_size=600,
-        n_steps_sgd=100, #[1000, 3000]
-        n_steps_pgd=100, #[1000, 3000] 
+        n_steps_sgd=10000,
+        n_steps_pgd=3000,
         gamma_sgd=0.1,
         gamma_natural_sgd=0.1,
         gamma_pgd0=0.1,
@@ -1334,44 +1749,147 @@ if __name__ == "__main__":
         ell0=10.0,
         ell_min=2.0,
         decay=0.99,
+        run_adaptive_sgd=True,
+        run_fixed_pgd=True,
     )
+    ablation_kwargs = dict(
+        theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
+        theta0_by_seed=np.array(
+            [
+                [3.5, 2.0, 0.6, -0.8],
+                [3.4, 1.9, 0.7, -0.75],
+                [2.0, 2.1, 0.5, -0.85],
+                [2.0, 2.0, 1.3, -0.6],
+                [3.7, 1.8, 0.6, -0.9],
+            ],
+            dtype=np.float64,
+        ),
+        n_obs_full=1000,
+        target_batch_size=200,
+        n_steps_sgd=3000,
+        n_steps_pgd=3000,
+        gamma_sgd=0.1,
+        gamma_natural_sgd=0.1,
+        gamma_pgd0=0.1,
+        lambda_scale=1e-3,
+        natural_damping=1e-3,
+        n_eval_model=2000,
+        ell_fixed=2.0,
+        ell0=10.0,
+        ell_min=2.0,
+        decay=0.99,
+        run_adaptive_sgd=False,
+        run_fixed_pgd=False,
+    )
+    lengthscale_sweep_param = "ell_min"
+    lengthscale_sweep_values = [0.1, 0.3, 1.0, 3.0, 10.0]
+    lengthscale_grid_param = "ell_min"
+    lengthscale_grid_values = [0.1, 0.3, 1.0, 3.0, 10.0]
+    secondary_lengthscale_grid_param = "ell0"
+    secondary_lengthscale_grid_values = [2.0, 5.0, 10.0, 20.0]
+    decay_sweep_values = [0.8, 0.9, 0.95]
 
-    print("\nSaved results")
-    print(f"baseline_eval_mean={result['baseline_eval_mean']:.8f}")
-    print(f"natural_eval_mean={result['natural_eval_mean']:.8f}")
-    print(f"adaptive_eval_mean={result['adaptive_eval_mean']:.8f}")
-    print(f"baseline_theta_mean={np.array(result['baseline_theta_mean'])}")
-    print(f"natural_theta_mean={np.array(result['natural_theta_mean'])}")
-    print(f"adaptive_theta_mean={np.array(result['adaptive_theta_mean'])}")
-    print(f"file={result['output_path']}")
+    if experiment_mode == "single_run":
+        result = run_for_n_model(
+            n_model=600,
+            seeds=range(5),
+            output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL",
+            **single_run_kwargs,
+        )
 
+        print("\nSaved results")
+        print(f"baseline_eval_mean={result['baseline_eval_mean']:.8f}")
+        print(f"natural_eval_mean={result['natural_eval_mean']:.8f}")
+        print(f"adaptive_eval_mean={result['adaptive_eval_mean']:.8f}")
+        print(f"baseline_theta_mean={np.array(result['baseline_theta_mean'])}")
+        print(f"natural_theta_mean={np.array(result['natural_theta_mean'])}")
+        print(f"adaptive_theta_mean={np.array(result['adaptive_theta_mean'])}")
+        print(f"file={result['output_path']}")
 
-#     summary = run_lengthscale_regularization_grid_for_n_model(
-#     n_model=600,
-#     seeds=range(5),
-#     output_dir="ablations/gk_heatmap",
+    elif experiment_mode == "step_size_ablation":
+        result = run_step_size_ablation_for_n_model(
+            n_model=600,
+            seeds=range(5),
+            output_dir="ablations/gk_gamma",
+            gamma_values=[100],#step_size_ablation
+            sweep_param="gamma_pgd0",
+            **ablation_kwargs,
+        )
 
-#     lengthscale_param="ell_min",
-#     lengthscale_values=[0.1, 0.3, 1.0, 3.0, 10.0],
-#     lambda_scales=[1e-0],
-#     theta0_by_seed=np.array([
-#         [3.5, 2.0, 0.6, -0.8],
-#         [3.4, 1.9, 0.7, -0.75],
-#         [2.0, 2.1, 0.5, -0.85],
-#         [2.0, 2.0, 1.3, -0.6],
-#         [3.7, 1.8, 0.6, -0.9],
-#     ], dtype=np.float64),
+        print("\nSaved step-size ablation")
+        print(f"summary={result['summary_path']}")
 
-#     ell0=10.0,          # fixed
-#     decay=0.99,
-#     gamma_pgd0=0.1,
-    
-#     theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-#     # theta0=np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64),
-#     n_obs_full=1000,
-#     target_batch_size=200,
-#     n_steps_sgd=3000,
-#     n_steps_pgd=3000,
-#     gamma_sgd=0.1,
-#     ell_fixed=2.0,
-# )
+    elif experiment_mode == "decay_ablation":
+        result = run_decay_ablation_for_n_model(
+            n_model=600,
+            seeds=range(5),
+            output_dir="ablations/gk_decay",
+            decay_values=decay_sweep_values,
+            sweep_param="decay",
+            **ablation_kwargs,
+        )
+
+        print("\nSaved decay ablation")
+        print(f"summary={result['summary_path']}")
+
+    elif experiment_mode == "observation_model_grid":
+        result = run_observation_model_grid(
+            seeds=range(5),
+            n_obs_full_values=[300, 600, 1000],
+            n_model_values=[2],
+            output_dir="ablations/gk_mn_grid",
+            tie_target_batch_to_n_obs=True,
+            **ablation_kwargs,
+        )
+
+        print("\nSaved observation/model grid")
+        print(f"summary={result['summary_path']}")
+
+    elif experiment_mode == "lengthscale_ablation":
+        result = run_lengthscale_ablation_for_n_model(
+            n_model=600,
+            seeds=range(5),
+            output_dir="ablations/gk_lengthscale",
+            sweep_param=lengthscale_sweep_param,
+            sweep_values=lengthscale_sweep_values,
+            **ablation_kwargs,
+        )
+
+        print("\nSaved lengthscale ablation")
+        print(f"summary={result['summary_path']}")
+
+    elif experiment_mode == "regularization_ablation":
+        result = run_regularization_ablation_for_n_model(
+            n_model=600,
+            seeds=range(5),
+            output_dir="ablations/gk_ridge",
+            lambda_scales=[1e-4, 1e-2, 1e0],
+            **ablation_kwargs,
+        )
+
+        print("\nSaved regularization ablation")
+        print(f"summary={result['summary_path']}")
+
+    elif experiment_mode == "lengthscale_regularization_grid":
+        result = run_lengthscale_regularization_grid_for_n_model(
+            n_model=600,
+            seeds=range(5),
+            output_dir="ablations/gk_heatmap",
+            lengthscale_param=lengthscale_grid_param,
+            lengthscale_values=lengthscale_grid_values,
+            lambda_scales=[1e-4, 1e-2, 1e0],
+            secondary_lengthscale_param=secondary_lengthscale_grid_param,
+            secondary_lengthscale_values=secondary_lengthscale_grid_values,
+            **ablation_kwargs,
+        )
+
+        print("\nSaved lengthscale/regularization grid")
+        print(f"summary={result['summary_path']}")
+
+    else:
+        raise ValueError(
+            "experiment_mode must be one of "
+            "'single_run', 'step_size_ablation', 'decay_ablation', 'observation_model_grid', "
+            "'lengthscale_ablation', 'regularization_ablation', or "
+            "'lengthscale_regularization_grid'."
+        )
