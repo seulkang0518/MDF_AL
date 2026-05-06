@@ -2,7 +2,7 @@ import os
 os.environ["JAX_PLATFORMS"] = "cpu"
 import numpy as np
 import time
-from results_io import load_results_json, save_results_json
+from results_io import save_metadata_sidecar
 
 import jax
 jax.config.update("jax_enable_x64", True)
@@ -694,16 +694,18 @@ def run_experiments(
 
 
 def save_results(results, output_path):
-    save_results_json(results, output_path)
+    np.savez_compressed(output_path, **results)
+    save_metadata_sidecar(results, output_path)
 
 
 def load_results(input_path):
-    return load_results_json(input_path)
+    with np.load(input_path) as data:
+        return {key: data[key] for key in data.files}
 
 
 if __name__ == "__main__":
 
-    results_path = "results_n10f.json"
+    results_path = "results_n10f.npz"
 
     results = run_experiments(
         num_seeds=10,

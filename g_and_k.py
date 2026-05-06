@@ -2,7 +2,7 @@ import numpy as np
 import time
 from functools import partial
 from pathlib import Path
-from results_io import save_results_json
+from results_io import save_metadata_sidecar
 
 import jax
 jax.config.update("jax_enable_x64", True)
@@ -854,7 +854,10 @@ def run_baseline_and_adaptive(
 # This section repeats the one-seed experiment, stacks all histories, saves
 # per-seed arrays, and also saves means/stds for quick plotting.
 def save_results(results, output_path):
-    save_results_json(results, output_path)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(output_path, **results)
+    save_metadata_sidecar(results, output_path)
 
 
 def _format_theta_for_filename(theta):
@@ -1244,7 +1247,7 @@ def run_grid_over_n_model(
                 }
             )
 
-        output_path = output_dir / f"g_n_k_fixed{n_model}_theta0_{theta0_tag}.json"
+        output_path = output_dir / f"g_n_k_fixed{n_model}_theta0_{theta0_tag}.npz"
         save_results(results, output_path)
         summary[int(n_model)] = {
             "output_path": str(output_path),
@@ -1408,7 +1411,7 @@ def run_ablation_for_n_model(
             dtype=np.float64,
         )
 
-    summary_path = output_dir / f"{file_prefix}_{sweep_name}_summary.json"
+    summary_path = output_dir / f"{file_prefix}_{sweep_name}_summary.npz"
     save_results(aggregated, summary_path)
     aggregated["summary_path"] = str(summary_path)
     return aggregated
@@ -1584,7 +1587,7 @@ def run_observation_model_grid(
     if np.isfinite(natural_eval_mean_grid).any():
         aggregated["natural_eval_mean_grid"] = natural_eval_mean_grid
 
-    summary_path = output_dir / f"{file_prefix}_summary.json"
+    summary_path = output_dir / f"{file_prefix}_summary.npz"
     save_results(aggregated, summary_path)
     aggregated["summary_path"] = str(summary_path)
     return aggregated
@@ -1648,7 +1651,7 @@ def run_lengthscale_regularization_grid_for_n_model(
             "n_model": np.asarray(n_model, dtype=np.int32),
             "seeds": np.asarray(list(seeds), dtype=np.int32),
         }
-        summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.json"
+        summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.npz"
     else:
         secondary_lengthscale_values = list(secondary_lengthscale_values)
         eval_mean_grid = np.full(
@@ -1706,7 +1709,7 @@ def run_lengthscale_regularization_grid_for_n_model(
             "seeds": np.asarray(list(seeds), dtype=np.int32),
         }
         summary_path = output_dir / (
-            f"{file_prefix}_{lengthscale_param}_{secondary_lengthscale_param}_summary.json"
+            f"{file_prefix}_{lengthscale_param}_{secondary_lengthscale_param}_summary.npz"
         )
 
     save_results(aggregated, summary_path)

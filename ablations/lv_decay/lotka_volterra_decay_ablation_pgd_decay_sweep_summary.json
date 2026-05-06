@@ -4,9 +4,6 @@
   "sweep_values": [
     0.5
   ],
-  "output_paths": [
-    "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_0p5.npz"
-  ],
   "seeds": [
     0,
     1,
@@ -14,22 +11,6 @@
     3,
     4
   ],
-  "pgd_theta_means": [
-    [
-      79.29956556890627,
-      105.96939472803373
-    ]
-  ],
-  "pgd_theta_stds": [
-    [
-      24.506102388972515,
-      18.157712156012852
-    ]
-  ],
-  "pgd_eval_means": [
-    0.08979353215358346
-  ],
-  "pgd_eval_stds": [
-    0.09406274901129999
-  ]
+  "result_file": "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_summary.npz",
+  "metadata_only": true
 }

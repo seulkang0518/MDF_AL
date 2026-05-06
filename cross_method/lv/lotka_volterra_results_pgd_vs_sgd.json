@@ -1,4 +1,5 @@
-"seeds": [
+{
+  "seeds": [
     0,
     1,
     2,
@@ -41,16 +42,7 @@
   ],
   "corruption": 0.0,
   "standardize": false,
-  "scale_mean": [
-    0.0,
-    0.0
-  ],
-  "scale_std": [
-    1.0,
-    1.0
-  ],
-
-   "m_obs": 100,
+  "m_obs": 100,
   "n_model": 50,
   "n_steps": 11000,
   "sgd_n_steps": 11000,
@@ -69,4 +61,7 @@
   "print_kernel_diagnostics": true,
   "run_adaptive_sgd": true,
   "run_fixed_pgd": true,
-  "uses_theta0_by_seed": true
+  "uses_theta0_by_seed": true,
+  "result_file": "cross_method/lv/lotka_volterra_results_pgd_vs_sgd.npz",
+  "metadata_only": true
+}

@@ -1,4 +1,5 @@
-"seeds": [
+{
+  "seeds": [
     0,
     1,
     2,
@@ -66,3 +67,11 @@
   "ell_eval": 2.0,
   "decay": 0.99,
   "history_every": 1,
+  "run_baseline": true,
+  "run_natural": true,
+  "run_adaptive_sgd": true,
+  "run_fixed_pgd": true,
+  "uses_theta0_by_seed": true,
+  "result_file": "cross_method/gnk/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
+  "metadata_only": true
+}

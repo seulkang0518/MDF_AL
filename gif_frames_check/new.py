@@ -1,7 +1,7 @@
 import numpy as np
 from functools import partial
 from pathlib import Path
-from results_io import save_results_json
+from results_io import save_metadata_sidecar
 
 import jax
 jax.config.update("jax_enable_x64", True)
@@ -558,7 +558,8 @@ def run_baseline_and_adaptive(
 # 14. Multi-seed / multi-n_model runner
 # ============================================================
 def save_results(results, output_path):
-    save_results_json(results, output_path)
+    np.savez_compressed(output_path, **results)
+    save_metadata_sidecar(results, output_path)
 
 
 def _format_theta_for_filename(theta):
@@ -721,7 +722,7 @@ def run_grid_over_n_model(
             "adaptive_theta_history_mean": np.mean(adaptive_theta_histories, axis=0),
         }
 
-        output_path = output_dir / f"g_n_k_fixed{n_model}_theta0_{theta0_tag}.json"
+        output_path = output_dir / f"g_n_k_fixed{n_model}_theta0_{theta0_tag}.npz"
         save_results(results, output_path)
         summary[int(n_model)] = {
             "output_path": str(output_path),

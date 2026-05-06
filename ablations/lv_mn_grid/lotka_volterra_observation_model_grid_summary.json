@@ -8,59 +8,6 @@
   "n_model_values": [
     10
   ],
-  "pgd_eval_mean_grid": [
-    [
-      0.016362030115263666
-    ],
-    [
-      0.011260816364673952
-    ],
-    [
-      0.00669953240756192
-    ]
-  ],
-  "pgd_eval_std_grid": [
-    [
-      0.005160323415440555
-    ],
-    [
-      0.004029614499141797
-    ],
-    [
-      0.0017345631932684995
-    ]
-  ],
-  "pgd_theta_mean_grid": [
-    [
-      [
-        99.51067627170183,
-        123.9608451049673
-      ]
-    ],
-    [
-      [
-        99.94070624485077,
-        122.25955664849423
-      ]
-    ],
-    [
-      [
-        101.5156807723957,
-        123.24263710186055
-      ]
-    ]
-  ],
-  "output_paths": [
-    [
-      "ablations/lv_mn_grid/lotka_volterra_observation_model_grid_m_50_n_10.npz"
-    ],
-    [
-      "ablations/lv_mn_grid/lotka_volterra_observation_model_grid_m_100_n_10.npz"
-    ],
-    [
-      "ablations/lv_mn_grid/lotka_volterra_observation_model_grid_m_200_n_10.npz"
-    ]
-  ],
   "seeds": [
     0,
     1,
@@ -68,5 +15,7 @@
     3,
     4
   ],
-  "tie_target_batch_to_m_obs": true
+  "tie_target_batch_to_m_obs": true,
+  "result_file": "ablations/lv_mn_grid/lotka_volterra_observation_model_grid_summary.npz",
+  "metadata_only": true
 }

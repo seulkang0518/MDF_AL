@@ -4,11 +4,9 @@ from pathlib import Path
 import numpy as np
 
 
-def _json_path(path_like):
+def metadata_sidecar_path(path_like):
     path = Path(path_like)
-    if path.suffix == ".json":
-        return path
-    return path.with_suffix(".json")
+    return path.with_name(f"{path.stem}_meta.json")
 
 
 def _to_jsonable(value):
@@ -25,18 +23,34 @@ def _to_jsonable(value):
     return value
 
 
-def save_results_json(results, output_path):
-    output_path = _json_path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = _to_jsonable(results)
-    with output_path.open("w", encoding="utf-8") as handle:
+def _is_metadata_value(value):
+    if isinstance(value, Path):
+        return True
+    if isinstance(value, (str, bool, int, float, np.bool_, np.integer, np.floating)):
+        return True
+    if isinstance(value, np.ndarray):
+        return value.ndim <= 1 and value.size <= 256
+    if isinstance(value, (list, tuple)):
+        return len(value) <= 256 and all(
+            isinstance(item, (str, bool, int, float, np.bool_, np.integer, np.floating))
+            for item in value
+        )
+    return False
+
+
+def extract_metadata(results):
+    metadata = {}
+    for key, value in results.items():
+        if _is_metadata_value(value):
+            metadata[key] = _to_jsonable(value)
+    return metadata
+
+
+def save_metadata_sidecar(results, output_path):
+    sidecar_path = metadata_sidecar_path(output_path)
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = extract_metadata(results)
+    payload["result_file"] = str(Path(output_path))
+    with sidecar_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
-    return output_path
-
-
-def load_results_json(input_path):
-    input_path = Path(input_path)
-    if not input_path.exists() and input_path.suffix != ".json":
-        input_path = _json_path(input_path)
-    with input_path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+    return sidecar_path
