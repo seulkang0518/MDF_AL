@@ -1542,11 +1542,11 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "observation_model_grid"
+    experiment_mode = "decay_ablation"
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
-    sgd_n_steps = 20000
+    sgd_n_steps = 12000
     pgd_n_steps = 12000
     single_run_theta0_by_seed = np.tile(np.array([90.0, 90.0], dtype=np.float64), (10, 1))
     # single_run_theta0_by_seed = np.array(
@@ -1619,7 +1619,7 @@ if __name__ == "__main__":
     lengthscale_grid_values = [10.0, 30.0, 100.0, 300.0]
     secondary_lengthscale_grid_param = "pgd_ell0"
     secondary_lengthscale_grid_values = [100.0, 300.0, 1000.0, 3000.0]
-    decay_sweep_values = [0.5]
+    decay_sweep_values = [0.9995]
 
     if experiment_mode == "single_run":
         result = run_experiment(
@@ -1701,7 +1701,7 @@ if __name__ == "__main__":
     elif experiment_mode == "regularization_ablation":
         result = run_regularization_ablation(
             output_dir="ablations/lv_ridge",
-            lambda_scales=[1e-4, 1e-2, 1e0],
+            lambda_scales=[1e-3],
             seeds=range(5),
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,

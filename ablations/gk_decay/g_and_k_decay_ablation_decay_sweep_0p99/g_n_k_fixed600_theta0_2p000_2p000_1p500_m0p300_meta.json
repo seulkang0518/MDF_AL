@@ -1,0 +1,88 @@
+{
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "n_model": 600,
+  "theta_true": [
+    3.0,
+    1.0,
+    1.0,
+    -0.6931471805599453
+  ],
+  "theta0": [
+    2.0,
+    2.0,
+    1.5,
+    -0.3
+  ],
+  "n_obs_full": 1000,
+  "target_batch_size": 200,
+  "n_steps_sgd": 1,
+  "n_steps_pgd": 3000,
+  "gamma_sgd": 0.1,
+  "gamma_natural_sgd": 0.1,
+  "gamma_pgd0": 0.1,
+  "lambda_scale": 0.001,
+  "natural_damping": 0.001,
+  "n_eval_model": 2000,
+  "ell_fixed": 2.0,
+  "ell0": 10.0,
+  "ell_min": 2.0,
+  "ell_eval": 2.0,
+  "decay": 0.99,
+  "history_every": 1,
+  "adaptive_train_losses": [
+    0.0006480990341051899,
+    0.00035198495720346987,
+    0.0015000321301663145,
+    0.0003260007937034964,
+    0.00039127035142449957
+  ],
+  "adaptive_eval_losses": [
+    5.28982475365776e-05,
+    1.370555787179947e-06,
+    1.2540482401054465e-05,
+    0.00012931928246393739,
+    3.028601485219699e-05
+  ],
+  "adaptive_theta_mean": [
+    3.0315980494414183,
+    1.0494046494275373,
+    0.7821156779052394,
+    -0.7380077734760825
+  ],
+  "adaptive_theta_std": [
+    0.04136113684833983,
+    0.09235187773035872,
+    0.25466802438073216,
+    0.0989944321308166
+  ],
+  "adaptive_train_mean": 0.0006434774533205941,
+  "adaptive_train_std": 0.0004434129002129447,
+  "adaptive_eval_mean": 4.528291660818928e-05,
+  "adaptive_eval_std": 4.5487082879322925e-05,
+  "adaptive_elapsed_seconds": [
+    40.15496170904953,
+    40.46119425003417,
+    39.77602758305147,
+    40.14219191693701,
+    37.161114374990575
+  ],
+  "adaptive_elapsed_mean": 39.53909796681255,
+  "adaptive_elapsed_std": 1.2086532689928613,
+  "adaptive_elapsed_se": 0.5405261741390753,
+  "adaptive_lhs_history_mean": [],
+  "adaptive_rhs_history_mean": [],
+  "last_adapt_lhs": [],
+  "last_adapt_rhs": [],
+  "run_baseline": false,
+  "run_natural": false,
+  "run_adaptive_sgd": false,
+  "run_fixed_pgd": false,
+  "uses_theta0_by_seed": true,
+  "result_file": "ablations/gk_decay/g_and_k_decay_ablation_decay_sweep_0p99/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
+}

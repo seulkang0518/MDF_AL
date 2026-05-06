@@ -1,0 +1,88 @@
+{
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "n_model": 600,
+  "theta_true": [
+    3.0,
+    1.0,
+    1.0,
+    -0.6931471805599453
+  ],
+  "theta0": [
+    2.0,
+    2.0,
+    1.5,
+    -0.3
+  ],
+  "n_obs_full": 1000,
+  "target_batch_size": 200,
+  "n_steps_sgd": 1,
+  "n_steps_pgd": 3000,
+  "gamma_sgd": 0.1,
+  "gamma_natural_sgd": 0.1,
+  "gamma_pgd0": 0.1,
+  "lambda_scale": 1.0,
+  "natural_damping": 0.001,
+  "n_eval_model": 2000,
+  "ell_fixed": 2.0,
+  "ell0": 10.0,
+  "ell_min": 2.0,
+  "ell_eval": 2.0,
+  "decay": 0.99,
+  "history_every": 1,
+  "adaptive_train_losses": [
+    0.0012295273904112001,
+    0.0007413721643040888,
+    0.0018667494809817087,
+    0.0004010699348003696,
+    0.0006772574048133774
+  ],
+  "adaptive_eval_losses": [
+    0.00039902854433946153,
+    0.00035084189743476556,
+    0.00038582182902646456,
+    0.0004192622475788956,
+    0.0003089864799427453
+  ],
+  "adaptive_theta_mean": [
+    3.023793424183162,
+    1.3297875851537069,
+    0.7328268406556644,
+    -0.8504619076737583
+  ],
+  "adaptive_theta_std": [
+    0.03352929973866315,
+    0.09549138104463481,
+    0.29199367703020024,
+    0.08610434320764863
+  ],
+  "adaptive_train_mean": 0.000983195275062149,
+  "adaptive_train_std": 0.0005161964461277187,
+  "adaptive_eval_mean": 0.00037278819966446653,
+  "adaptive_eval_std": 3.891161249181939e-05,
+  "adaptive_elapsed_seconds": [
+    40.18484083400108,
+    38.8524038749747,
+    38.63768725004047,
+    41.06030079210177,
+    39.918600166914985
+  ],
+  "adaptive_elapsed_mean": 39.7307665836066,
+  "adaptive_elapsed_std": 0.8916803876763467,
+  "adaptive_elapsed_se": 0.3987715922095354,
+  "adaptive_lhs_history_mean": [],
+  "adaptive_rhs_history_mean": [],
+  "last_adapt_lhs": [],
+  "last_adapt_rhs": [],
+  "run_baseline": false,
+  "run_natural": false,
+  "run_adaptive_sgd": false,
+  "run_fixed_pgd": false,
+  "uses_theta0_by_seed": true,
+  "result_file": "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_1/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
+}

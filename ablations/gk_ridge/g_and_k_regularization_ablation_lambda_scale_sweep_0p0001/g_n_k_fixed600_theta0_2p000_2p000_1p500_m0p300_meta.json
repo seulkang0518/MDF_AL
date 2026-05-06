@@ -1,0 +1,88 @@
+{
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "n_model": 600,
+  "theta_true": [
+    3.0,
+    1.0,
+    1.0,
+    -0.6931471805599453
+  ],
+  "theta0": [
+    2.0,
+    2.0,
+    1.5,
+    -0.3
+  ],
+  "n_obs_full": 1000,
+  "target_batch_size": 200,
+  "n_steps_sgd": 1,
+  "n_steps_pgd": 3000,
+  "gamma_sgd": 0.1,
+  "gamma_natural_sgd": 0.1,
+  "gamma_pgd0": 0.1,
+  "lambda_scale": 0.0001,
+  "natural_damping": 0.001,
+  "n_eval_model": 2000,
+  "ell_fixed": 2.0,
+  "ell0": 10.0,
+  "ell_min": 2.0,
+  "ell_eval": 2.0,
+  "decay": 0.99,
+  "history_every": 1,
+  "adaptive_train_losses": [
+    0.0006533837259684444,
+    0.00035220584741675343,
+    0.0014912638061551874,
+    0.00032165676534775416,
+    0.0003937155401389811
+  ],
+  "adaptive_eval_losses": [
+    5.14670053371362e-05,
+    1.7363069341759639e-06,
+    1.3214595470381966e-05,
+    0.00013143884795090125,
+    3.007926345848174e-05
+  ],
+  "adaptive_theta_mean": [
+    3.029370986866195,
+    1.0265476592757703,
+    0.8031981806137418,
+    -0.7122720274348149
+  ],
+  "adaptive_theta_std": [
+    0.047112873644254066,
+    0.09467728563539302,
+    0.2792620096192931,
+    0.10191278609789221
+  ],
+  "adaptive_train_mean": 0.0006424451370054241,
+  "adaptive_train_std": 0.0004403687597445432,
+  "adaptive_eval_mean": 4.5587203830215424e-05,
+  "adaptive_eval_std": 4.607919272115162e-05,
+  "adaptive_elapsed_seconds": [
+    44.551851583993994,
+    44.755753792007454,
+    46.312121249968186,
+    48.04860525007825,
+    50.569626791984774
+  ],
+  "adaptive_elapsed_mean": 46.847591733606535,
+  "adaptive_elapsed_std": 2.2462820788960967,
+  "adaptive_elapsed_se": 1.0045678850102435,
+  "adaptive_lhs_history_mean": [],
+  "adaptive_rhs_history_mean": [],
+  "last_adapt_lhs": [],
+  "last_adapt_rhs": [],
+  "run_baseline": false,
+  "run_natural": false,
+  "run_adaptive_sgd": false,
+  "run_fixed_pgd": false,
+  "uses_theta0_by_seed": true,
+  "result_file": "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_0p0001/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
+}

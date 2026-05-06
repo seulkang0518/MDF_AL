@@ -1722,7 +1722,7 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "observation_model_grid"
+    experiment_mode = "decay_ablation"
 
     single_run_theta0_by_seed = np.array(
         [
@@ -1789,13 +1789,13 @@ if __name__ == "__main__":
     lengthscale_grid_values = [0.1, 0.3, 1.0, 3.0, 10.0]
     secondary_lengthscale_grid_param = "ell0"
     secondary_lengthscale_grid_values = [2.0, 5.0, 10.0, 20.0]
-    decay_sweep_values = [0.5]
+    decay_sweep_values = [0.99]
 
     if experiment_mode == "single_run":
         result = run_for_n_model(
             n_model=600,
             seeds=range(5),
-            output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL",
+            output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL/results/gnk",
             **single_run_kwargs,
         )
 
@@ -1865,7 +1865,7 @@ if __name__ == "__main__":
             n_model=600,
             seeds=range(5),
             output_dir="ablations/gk_ridge",
-            lambda_scales=[1e-4, 1e-2, 1e0],
+            lambda_scales=[1e-3],
             **ablation_kwargs,
         )
 
