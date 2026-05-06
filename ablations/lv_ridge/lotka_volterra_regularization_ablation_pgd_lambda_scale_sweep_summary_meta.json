@@ -2,10 +2,16 @@
   "sweep_name": "pgd_lambda_scale_sweep",
   "sweep_param": "pgd_lambda_scale",
   "sweep_values": [
-    0.001
+    0.0001,
+    0.001,
+    0.01,
+    1.0
   ],
   "output_paths": [
-    "ablations/lv_ridge/lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_0p001.npz"
+    "ablations/lv_ridge/lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_0p0001.npz",
+    "ablations/lv_ridge/lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_0p001.npz",
+    "ablations/lv_ridge/lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_0p01.npz",
+    "ablations/lv_ridge/lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_1.npz"
   ],
   "seeds": [
     0,
@@ -15,10 +21,16 @@
     4
   ],
   "pgd_eval_means": [
-    0.05550890770681568
+    0.01169787854685786,
+    0.01169793397198686,
+    0.011698486666726732,
+    0.011740094657712186
   ],
   "pgd_eval_stds": [
-    0.0859139377006227
+    0.003424703093928389,
+    0.0034245187328984135,
+    0.0034226998469413647,
+    0.003340474134346409
   ],
   "result_file": "ablations/lv_ridge/lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_summary.npz"
 }

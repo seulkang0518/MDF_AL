@@ -6,10 +6,7 @@
     200
   ],
   "n_model_values": [
-    25,
-    50,
-    100,
-    200
+    10
   ],
   "seeds": [
     0,
@@ -19,6 +16,6 @@
     4
   ],
   "tie_target_batch_to_m_obs": true,
-  "result_file": "ablations/lv_mn_grid/history/lotka_volterra_observation_model_grid_summary.npz",
+  "result_file": "ablations/lv_mn_grid/lotka_volterra_observation_model_grid_summary.npz",
   "metadata_only": true
 }

@@ -24,16 +24,16 @@
       60.0
     ],
     [
-      60.0,
-      60.0
+      90.0,
+      90.0
     ],
     [
-      60.0,
-      60.0
+      75.0,
+      75.0
     ],
     [
-      60.0,
-      60.0
+      55.0,
+      55.0
     ],
     [
       60.0,
@@ -60,6 +60,6 @@
   "kernel_diag_max_pairs": 20000,
   "print_kernel_diagnostics": true,
   "uses_theta0_by_seed": true,
-  "result_file": "ablations/lv_mn_grid/history/lotka_volterra_observation_model_grid_m_50_n_200.npz",
+  "result_file": "ablations/lv_mn_grid/lotka_volterra_observation_model_grid_m_50_n_200.npz",
   "metadata_only": true
 }

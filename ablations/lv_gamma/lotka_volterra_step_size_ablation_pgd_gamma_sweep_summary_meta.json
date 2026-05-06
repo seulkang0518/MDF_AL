@@ -1,0 +1,40 @@
+{
+  "sweep_name": "pgd_gamma_sweep",
+  "sweep_param": "pgd_gamma",
+  "sweep_values": [
+    1.0,
+    10.0,
+    30.0,
+    100.0,
+    300.0
+  ],
+  "output_paths": [
+    "ablations/lv_gamma/lotka_volterra_step_size_ablation_pgd_gamma_sweep_1.npz",
+    "ablations/lv_gamma/lotka_volterra_step_size_ablation_pgd_gamma_sweep_10.npz",
+    "ablations/lv_gamma/lotka_volterra_step_size_ablation_pgd_gamma_sweep_30.npz",
+    "ablations/lv_gamma/lotka_volterra_step_size_ablation_pgd_gamma_sweep_100.npz",
+    "ablations/lv_gamma/lotka_volterra_step_size_ablation_pgd_gamma_sweep_300.npz"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "pgd_eval_means": [
+    0.15938855805964958,
+    0.14173009277228663,
+    0.10227491685631876,
+    0.05544270688149598,
+    0.01169793397198686
+  ],
+  "pgd_eval_stds": [
+    0.08789285647570019,
+    0.10176372585471705,
+    0.10631011989521813,
+    0.08585686494790447,
+    0.0034245187328984135
+  ],
+  "result_file": "ablations/lv_gamma/lotka_volterra_step_size_ablation_pgd_gamma_sweep_summary.npz"
+}

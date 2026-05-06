@@ -1542,7 +1542,7 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "decay_ablation"
+    experiment_mode = "regularization_ablation"
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
@@ -1597,7 +1597,7 @@ if __name__ == "__main__":
         standardize=False,
         ell_fixed=30,
         ell_eval=30,
-        pgd_ell0=1000,
+        pgd_ell0=3000,
         pgd_ell_min=30,
         pgd_decay=0.9995,
         run_plain_sgd=False,
@@ -1606,7 +1606,7 @@ if __name__ == "__main__":
         run_fixed_pgd=False,
         sgd_gamma=100,
         natural_sgd_gamma=100,
-        pgd_gamma=100,
+        pgd_gamma=300,
         pgd_lambda_scale=1e-3,
         natural_damping=1e-3,
         print_kernel_diagnostics=True,
@@ -1619,7 +1619,7 @@ if __name__ == "__main__":
     lengthscale_grid_values = [10.0, 30.0, 100.0, 300.0]
     secondary_lengthscale_grid_param = "pgd_ell0"
     secondary_lengthscale_grid_values = [100.0, 300.0, 1000.0, 3000.0]
-    decay_sweep_values = [0.9995]
+    decay_sweep_values = [0.5,0.8, 0.9, 0.95, 0.9995]
 
     if experiment_mode == "single_run":
         result = run_experiment(
@@ -1648,7 +1648,7 @@ if __name__ == "__main__":
     elif experiment_mode == "step_size_ablation":
         result = run_step_size_ablation(
             output_dir="ablations/lv_gamma",
-            gamma_values=[1.0],#10.0, 30.0, 100.0, 300.0
+            gamma_values=[1.0, 10.0, 30.0, 100.0, 300.0],#10.0, 30.0, 100.0, 300.0
             sweep_param="pgd_gamma",
             seeds=range(5),
             n_steps=max(sgd_n_steps, pgd_n_steps),
@@ -1674,8 +1674,8 @@ if __name__ == "__main__":
     elif experiment_mode == "observation_model_grid":
         result = run_observation_model_grid(
             output_dir="ablations/lv_mn_grid",
-            m_obs_values=[50, 100, 200],
-            n_model_values=[10], #25, 50, 100, 200
+            m_obs_values=[200],
+            n_model_values=[1, 10, 25, 50, 100, 200], #25, 50, 100, 200
             seeds=range(5),
             tie_target_batch_to_m_obs=True,
             n_steps=max(sgd_n_steps, pgd_n_steps),
@@ -1701,7 +1701,7 @@ if __name__ == "__main__":
     elif experiment_mode == "regularization_ablation":
         result = run_regularization_ablation(
             output_dir="ablations/lv_ridge",
-            lambda_scales=[1e-3],
+            lambda_scales=[1e-4, 1e-3, 1e-2, 1e-0],
             seeds=range(5),
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
