@@ -1,0 +1,29 @@
+{
+  "sweep_name": "gamma_pgd0_sweep",
+  "sweep_param": "gamma_pgd0",
+  "sweep_values": [
+    10.0
+  ],
+  "output_paths": [
+    "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_10/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
+  ],
+  "n_model": 600,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "adaptive_eval_means": [
+    0.013471588663516812
+  ],
+  "adaptive_theta_means": [
+    [
+      3.121211304805447,
+      2.432177551120524,
+      0.13632230798013112,
+      -1.961653614012306
+    ]
+  ]
+}

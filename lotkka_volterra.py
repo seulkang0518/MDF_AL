@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 
 import numpy as np
+from results_io import load_results_json, save_results_json
 
 import jax
 
@@ -1172,7 +1173,7 @@ def run_ablation_sweep(
         run_kwargs = dict(kwargs)
         run_kwargs[sweep_param] = sweep_value
         value_tag = _format_value_for_filename(sweep_value)
-        output_path = output_dir / f"{file_prefix}_{sweep_name}_{value_tag}.npz"
+        output_path = output_dir / f"{file_prefix}_{sweep_name}_{value_tag}.json"
         result = run_experiment(
             seeds=seeds,
             output_path=output_path,
@@ -1206,7 +1207,7 @@ def run_ablation_sweep(
             }
         )
 
-    summary_path = output_dir / f"{file_prefix}_{sweep_name}_summary.npz"
+    summary_path = output_dir / f"{file_prefix}_{sweep_name}_summary.json"
     save_results(summary, summary_path)
     summary["summary_path"] = str(summary_path)
     return summary
@@ -1334,7 +1335,7 @@ def run_observation_model_grid(
 
             output_path = output_dir / (
                 f"{file_prefix}_m_{_format_value_for_filename(m_obs)}"
-                f"_n_{_format_value_for_filename(n_model)}.npz"
+                f"_n_{_format_value_for_filename(n_model)}.json"
             )
             result = run_experiment(
                 seeds=seeds,
@@ -1364,7 +1365,7 @@ def run_observation_model_grid(
     if np.isfinite(sgd_eval_mean_grid).any():
         summary["sgd_eval_mean_grid"] = sgd_eval_mean_grid
 
-    summary_path = output_dir / f"{file_prefix}_summary.npz"
+    summary_path = output_dir / f"{file_prefix}_summary.json"
     save_results(summary, summary_path)
     summary["summary_path"] = str(summary_path)
     return summary
@@ -1406,7 +1407,7 @@ def run_lengthscale_regularization_grid(
                     cell_kwargs["ell_eval"] = lengthscale_value
                 output_path = output_dir / (
                     f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
-                    f"_lambda_{_format_value_for_filename(lambda_scale)}.npz"
+                    f"_lambda_{_format_value_for_filename(lambda_scale)}.json"
                 )
 
         for method in ("adaptive_sgd", "fixed_pgd"):
@@ -1458,7 +1459,7 @@ def run_lengthscale_regularization_grid(
             "output_paths": np.asarray(output_paths, dtype=str),
             "seeds": np.asarray(list(seeds), dtype=np.int32),
         }
-        summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.npz"
+        summary_path = output_dir / f"{file_prefix}_{lengthscale_param}_summary.json"
     else:
         secondary_lengthscale_values = list(secondary_lengthscale_values)
         eval_mean_grid = np.full(
@@ -1492,7 +1493,7 @@ def run_lengthscale_regularization_grid(
                     output_path = output_dir / (
                         f"{file_prefix}_{lengthscale_param}_{_format_value_for_filename(lengthscale_value)}"
                         f"_{secondary_lengthscale_param}_{_format_value_for_filename(secondary_lengthscale_value)}"
-                        f"_lambda_{_format_value_for_filename(lambda_scale)}.npz"
+                        f"_lambda_{_format_value_for_filename(lambda_scale)}.json"
                     )
                     result = run_experiment(
                         seeds=seeds,
@@ -1520,7 +1521,7 @@ def run_lengthscale_regularization_grid(
             "seeds": np.asarray(list(seeds), dtype=np.int32),
         }
         summary_path = output_dir / (
-            f"{file_prefix}_{lengthscale_param}_{secondary_lengthscale_param}_summary.npz"
+            f"{file_prefix}_{lengthscale_param}_{secondary_lengthscale_param}_summary.json"
         )
 
     save_results(summary, summary_path)
@@ -1529,14 +1530,11 @@ def run_lengthscale_regularization_grid(
 
 
 def save_results(results, output_path):
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(output_path, **results)
+    save_results_json(results, output_path)
 
 
 def load_results(input_path):
-    with np.load(input_path) as data:
-        return {key: data[key] for key in data.files}
+    return load_results_json(input_path)
 
 
 if __name__ == "__main__":
@@ -1622,7 +1620,7 @@ if __name__ == "__main__":
     if experiment_mode == "single_run":
         result = run_experiment(
             seeds=range(10),
-            output_path="results/lv/lotka_volterra_results_90_90.npz",
+            output_path="results/lv/lotka_volterra_results_90_90.json",
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,

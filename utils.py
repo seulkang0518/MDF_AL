@@ -5,6 +5,7 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from results_io import load_results_json
 
 
 FIGSIZE = (6, 4)
@@ -177,9 +178,7 @@ def _set_plot_style(profile_name):
 
 # Shared helpers
 def _load_npz_dict(npz_path):
-    npz_path = Path(npz_path)
-    with np.load(npz_path) as data:
-        return {key: data[key] for key in data.files}
+    return load_results_json(npz_path)
 
 
 def _save_figure(fig, output_path=None, **savefig_kwargs):
@@ -1064,7 +1063,7 @@ def make_gk_theta_error_heatmap(results_dir, output_path):
     ell_values = set()
     lambda_values = set()
 
-    for npz_path in sorted(results_dir.rglob("*.npz")):
+    for npz_path in sorted(results_dir.rglob("*.json")):
         relative_parent = npz_path.parent.relative_to(results_dir).as_posix()
         match = dirname_pattern.match(relative_parent)
         if match is None:
@@ -1639,14 +1638,14 @@ def make_lv_theta_error_heatmap(results_dir, output_path):
     results_dir = Path(results_dir)
     filename_pattern = re.compile(
         r"lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_"
-        r"(?P<ell>[^_]+)_lambda_(?P<lam>[^_]+)\.npz$"
+        r"(?P<ell>[^_]+)_lambda_(?P<lam>[^_]+)\.json$"
     )
 
     error_by_cell = {}
     ell_values = set()
     lambda_values = set()
 
-    for npz_path in sorted(results_dir.glob("lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_*_lambda_*.npz")):
+    for npz_path in sorted(results_dir.glob("lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_*_lambda_*.json")):
         match = filename_pattern.match(npz_path.name)
         if match is None:
             continue
@@ -1680,7 +1679,7 @@ def make_lv_theta_error_heatmap(results_dir, output_path):
 def make_lv_lengthscale_pair_heatmaps(results_dir, theta_output_path=None, mmd_output_path=None):
     results_dir = Path(results_dir)
     summary_path = (
-        results_dir / "lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_pgd_ell0_summary.npz"
+        results_dir / "lotka_volterra_lengthscale_regularization_grid_pgd_ell_min_pgd_ell0_summary.json"
     )
     if not summary_path.exists():
         raise ValueError(f"Missing LV pair-summary file: {summary_path}")
@@ -1726,14 +1725,14 @@ def make_lv_lengthscale_pair_heatmaps(results_dir, theta_output_path=None, mmd_o
 def make_lv_step_size_boxplot(results_dir, output_path=None, metric="pgd_eval_losses"):
     results_dir = Path(results_dir)
     filename_pattern = re.compile(
-        r"lotka_volterra_step_size_ablation_pgd_gamma_sweep_(?P<gamma>[^_]+)\.npz$"
+        r"lotka_volterra_step_size_ablation_pgd_gamma_sweep_(?P<gamma>[^_]+)\.json$"
     )
 
     gamma_values = []
     box_values = []
 
-    for npz_path in sorted(results_dir.glob("lotka_volterra_step_size_ablation_pgd_gamma_sweep_*.npz")):
-        if npz_path.name.endswith("_summary.npz"):
+    for npz_path in sorted(results_dir.glob("lotka_volterra_step_size_ablation_pgd_gamma_sweep_*.json")):
+        if npz_path.name.endswith("_summary.json"):
             continue
         match = filename_pattern.match(npz_path.name)
         if match is None:
@@ -1801,15 +1800,15 @@ def _run_if_inputs_exist(label, input_paths, output_path, plotter):
 def run_mmd_flow(root, figures_dir):
     _set_plot_style("mmd_flow")
     nonparametric_dir = root / "results" / "nonparametric"
-    mmd_comparison_npz = nonparametric_dir / "results_n100f.npz"
+    mmd_comparison_npz = nonparametric_dir / "results_n100f.json"
     mmd_vs_n_npz_paths = [
-        nonparametric_dir / "results_n10f.npz",
-        nonparametric_dir / "results_n30f.npz",
-        nonparametric_dir / "results_n100f.npz",
-        nonparametric_dir / "results_n300f.npz",
+        nonparametric_dir / "results_n10f.json",
+        nonparametric_dir / "results_n30f.json",
+        nonparametric_dir / "results_n100f.json",
+        nonparametric_dir / "results_n300f.json",
     ]
-    mmd_iteration_npz = nonparametric_dir / "results_n100f.npz"
-    mmd_lhs_rhs_npz = nonparametric_dir / "results_n100f.npz"
+    mmd_iteration_npz = nonparametric_dir / "results_n100f.json"
+    mmd_lhs_rhs_npz = nonparametric_dir / "results_n100f.json"
     mmd_output = figures_dir / "mmd_flow.pdf"
     _run_if_inputs_exist(
         "MMD flow figure",
@@ -1830,12 +1829,12 @@ def run_mmd_flow(root, figures_dir):
 def run_gnk(root, figures_dir):
     _set_plot_style("gnk")
     gnk_dir = root / "results" / "gnk"
-    gk_mmd_npz = gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800.npz"
+    gk_mmd_npz = gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800.json"
     gk_trajectory_npz_paths = [
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800.npz",
-        gnk_dir / "g_n_k_theta0_2p000_2p000_1p300_m0p600.npz",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800.json",
+        gnk_dir / "g_n_k_theta0_2p000_2p000_1p300_m0p600.json",
     ]
-    gk_lhs_rhs_npz = gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800.npz"
+    gk_lhs_rhs_npz = gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800.json"
     gk_summary_output = figures_dir / "gk_summary.pdf"
     _run_if_inputs_exist(
         "G-and-K summary figure",
@@ -1852,10 +1851,10 @@ def run_gnk(root, figures_dir):
     )
 
     gk_time_npz_paths = [
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_100.npz",
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_300.npz",
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_1000.npz",
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_3000.npz",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_100.json",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_300.json",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_1000.json",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_3000.json",
     ]
     gk_time_output = figures_dir / "gk_mmd_vs_time.pdf"
     _run_if_inputs_exist(
@@ -1882,12 +1881,12 @@ def run_lv(root, figures_dir):
     _set_plot_style("lv")
     lv_dir = root / "results" / "lv"
     lv_clean_npz_paths = [
-        lv_dir / "lv_results_50_60.npz",
-        lv_dir / "lv_results_90_90.npz",
+        lv_dir / "lv_results_50_60.json",
+        lv_dir / "lv_results_90_90.json",
     ]
     lv_corruption_npz_paths = [
-        lv_dir / "lv_results_60_60_c15.npz",
-        lv_dir / "lv_results_60_60_c35.npz",
+        lv_dir / "lv_results_60_60_c15.json",
+        lv_dir / "lv_results_60_60_c35.json",
     ]
     lv_summary_output = figures_dir / "lv_summary.pdf"
     _run_if_inputs_exist(
@@ -1906,18 +1905,18 @@ def run_lv(root, figures_dir):
 
     lv_time_budget_paths = {
         "50, 60": [
-            lv_dir / "lotka_volterra_results_50_60_10.npz",
-            lv_dir / "lotka_volterra_results_50_60_1000.npz",
-            lv_dir / "lotka_volterra_results_50_60_3000.npz",
-            lv_dir / "lotka_volterra_results_50_60_10000.npz",
-            lv_dir / "lotka_volterra_results_50_60_20000.npz",
+            lv_dir / "lotka_volterra_results_50_60_10.json",
+            lv_dir / "lotka_volterra_results_50_60_1000.json",
+            lv_dir / "lotka_volterra_results_50_60_3000.json",
+            lv_dir / "lotka_volterra_results_50_60_10000.json",
+            lv_dir / "lotka_volterra_results_50_60_20000.json",
         ],
         "90, 90": [
-            lv_dir / "lotka_volterra_results_90_90_10.npz",
-            lv_dir / "lotka_volterra_results_90_90_1000.npz",
-            lv_dir / "lotka_volterra_results_90_90_3000.npz",
-            lv_dir / "lotka_volterra_results_90_90_10000.npz",
-            lv_dir / "lotka_volterra_results_90_90_20000.npz",
+            lv_dir / "lotka_volterra_results_90_90_10.json",
+            lv_dir / "lotka_volterra_results_90_90_1000.json",
+            lv_dir / "lotka_volterra_results_90_90_3000.json",
+            lv_dir / "lotka_volterra_results_90_90_10000.json",
+            lv_dir / "lotka_volterra_results_90_90_20000.json",
         ],
     }
     lv_time_budget_output = figures_dir / "lv_theta_vs_time_budget.pdf"
@@ -1930,18 +1929,18 @@ def run_lv(root, figures_dir):
 
     lv_corruption_time_paths = {
         "c15": [
-            lv_dir / "lotka_volterra_results_60_60_c15_10.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_1000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_3000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_10000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_12000.npz",
+            lv_dir / "lotka_volterra_results_60_60_c15_10.json",
+            lv_dir / "lotka_volterra_results_60_60_c15_1000.json",
+            lv_dir / "lotka_volterra_results_60_60_c15_3000.json",
+            lv_dir / "lotka_volterra_results_60_60_c15_10000.json",
+            lv_dir / "lotka_volterra_results_60_60_c15_12000.json",
         ],
         "c35": [
-            lv_dir / "lotka_volterra_results_60_60_c35_10.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_1000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_3000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_10000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_12000.npz",
+            lv_dir / "lotka_volterra_results_60_60_c35_10.json",
+            lv_dir / "lotka_volterra_results_60_60_c35_1000.json",
+            lv_dir / "lotka_volterra_results_60_60_c35_3000.json",
+            lv_dir / "lotka_volterra_results_60_60_c35_10000.json",
+            lv_dir / "lotka_volterra_results_60_60_c35_12000.json",
         ],
     }
     lv_corruption_time_output = figures_dir / "lv_corruption_theta_vs_time.pdf"

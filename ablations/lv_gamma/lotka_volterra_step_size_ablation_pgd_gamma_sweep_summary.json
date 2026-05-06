@@ -1,0 +1,53 @@
+{
+  "sweep_name": "pgd_gamma_sweep",
+  "sweep_param": "pgd_gamma",
+  "sweep_values": [
+    1.0
+  ],
+  "output_paths": [
+    "ablations/lv_gamma/lotka_volterra_step_size_ablation_pgd_gamma_sweep_1.npz"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "sgd_theta_means": [
+    [
+      100.48038321487601,
+      120.6721432175073
+    ]
+  ],
+  "sgd_theta_stds": [
+    [
+      2.469145331554239,
+      1.6839340770261075
+    ]
+  ],
+  "sgd_eval_means": [
+    0.009425739397664359
+  ],
+  "sgd_eval_stds": [
+    0.003607061901416425
+  ],
+  "pgd_theta_means": [
+    [
+      69.25923013854671,
+      72.25028359052104
+    ]
+  ],
+  "pgd_theta_stds": [
+    [
+      14.10203638066184,
+      17.624484707952618
+    ]
+  ],
+  "pgd_eval_means": [
+    0.1552014909160929
+  ],
+  "pgd_eval_stds": [
+    0.08826763177619341
+  ]
+}
