@@ -1722,24 +1722,24 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "decay_ablation"
+    experiment_mode = "single_run"
 
-    single_run_theta0_by_seed = np.array(
-        [
-            [3.5, 2.0, 0.6, -0.8],
-            [3.4, 1.9, 0.7, -0.75],
-            [2.0, 2.1, 0.5, -0.85],
-            [2.0, 2.0, 1.3, -0.6],
-            [3.7, 1.8, 0.6, -0.9],
-        ],
-        dtype=np.float64,
-    )
+    # single_run_theta0_by_seed = np.array(
+    #     [
+    #         [3.5, 2.0, 0.6, -0.8],
+    #         [3.4, 1.9, 0.7, -0.75],
+    #         [2.0, 2.1, 0.5, -0.85],
+    #         [2.0, 2.0, 1.3, -0.6],
+    #         [3.7, 1.8, 0.6, -0.9],
+    #     ],
+    #     dtype=np.float64,
+    # )
     single_run_kwargs = dict(
         theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-        theta0_by_seed=single_run_theta0_by_seed,
+        theta0_by_seed=np.tile(np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64), (10, 1)),
         n_obs_full=1000,
         target_batch_size=600,
-        n_steps_sgd=10000,
+        n_steps_sgd=3000,
         n_steps_pgd=3000,
         gamma_sgd=0.1,
         gamma_natural_sgd=0.1,
@@ -1794,7 +1794,7 @@ if __name__ == "__main__":
     if experiment_mode == "single_run":
         result = run_for_n_model(
             n_model=600,
-            seeds=range(5),
+            seeds=range(10),
             output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL/results/gnk",
             **single_run_kwargs,
         )

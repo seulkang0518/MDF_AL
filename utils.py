@@ -38,6 +38,23 @@ COLORS = {
     "truth": "#f4b400",
 }
 
+METHOD_COLORS = {
+    "sgd": "#006d2c",
+    "adaptive_sgd": "#238b45",
+    "pgd": "#d95f02",
+    "fixed_pgd": "#ff9da6",
+}
+
+BOX_COLORS = [
+    "#4c78a8",
+    "#e45756",
+    "#72b7b2",
+    "#b279a2",
+    "#ff9da6",
+    "#9d755d",
+    "#bab0ab",
+]
+
 CORRUPTION_LINESTYLES = {
     "clean": "-",
     "0": "-",
@@ -66,6 +83,7 @@ BASE_PLOT_RC = {
     "figure.dpi": DPI,
 }
 LOCAL_PLOT_RC = dict(BASE_PLOT_RC)
+PLOT_RC = dict(BASE_PLOT_RC)
 FOUR_PANEL_RC = {
     **LOCAL_PLOT_RC,
     "axes.labelsize": 22,
@@ -105,6 +123,20 @@ NOTEBOOK_STYLE_PROFILES = {
         "inline_legend_size": 18,
         "four_panel_legend_size": 32,
     },
+    "gnk_ablation": {
+        "summary_figsize": (24, 5.0),
+        "summary_dpi": 150,
+        "title_size": 32,
+        "label_size": 32,
+        "tick_size": 26,
+        "legend_size": 32,
+        "marker_size": 5,
+        "comparison_scatter_size": 28,
+        "line_width": 2.0,
+        "title_pad": 8,
+        "inline_legend_size": 18,
+        "four_panel_legend_size": 32,
+    },
     "lv": {
         "summary_figsize": (30, 6.5),
         "summary_dpi": 150,
@@ -119,6 +151,48 @@ NOTEBOOK_STYLE_PROFILES = {
         "inline_legend_size": 18,
         "four_panel_legend_size": 32,
     },
+    "lv_ablation": {
+        "summary_figsize": (24, 5.0),
+        "summary_dpi": 150,
+        "title_size": 32,
+        "label_size": 32,
+        "tick_size": 26,
+        "legend_size": 32,
+        "marker_size": 5,
+        "comparison_scatter_size": 28,
+        "line_width": 2.0,
+        "title_pad": 8,
+        "inline_legend_size": 18,
+        "four_panel_legend_size": 32,
+    },
+    "cross_method": {
+        "summary_figsize": (6, 4),
+        "summary_dpi": 150,
+        "title_size": 28,
+        "label_size": 26,
+        "tick_size": 22,
+        "legend_size": 20,
+        "marker_size": 5,
+        "comparison_scatter_size": 28,
+        "line_width": 2.0,
+        "title_pad": 8,
+        "inline_legend_size": 18,
+        "four_panel_legend_size": 20,
+    },
+    "combined_time": {
+        "summary_figsize": (24, 5.0),
+        "summary_dpi": 150,
+        "title_size": 26,
+        "label_size": 26,
+        "tick_size": 20,
+        "legend_size": 28,
+        "marker_size": 5,
+        "comparison_scatter_size": 28,
+        "line_width": 2.0,
+        "title_pad": 8,
+        "inline_legend_size": 18,
+        "four_panel_legend_size": 28,
+    },
 }
 
 
@@ -126,7 +200,7 @@ def _set_plot_style(profile_name):
     global SUMMARY_FIGSIZE, SUMMARY_DPI, TITLE_SIZE, LABEL_SIZE, TICK_SIZE
     global LEGEND_SIZE, MARKER_SIZE, COMPARISON_SCATTER_SIZE, LINE_WIDTH
     global TITLE_PAD, INLINE_LEGEND_SIZE, FOUR_PANEL_LEGEND_SIZE
-    global BASE_PLOT_RC, LOCAL_PLOT_RC, FOUR_PANEL_RC
+    global BASE_PLOT_RC, LOCAL_PLOT_RC, PLOT_RC, FOUR_PANEL_RC
 
     profile = NOTEBOOK_STYLE_PROFILES[profile_name]
     SUMMARY_FIGSIZE = profile["summary_figsize"]
@@ -164,6 +238,7 @@ def _set_plot_style(profile_name):
         "figure.dpi": DPI,
     }
     LOCAL_PLOT_RC = dict(BASE_PLOT_RC)
+    PLOT_RC = dict(BASE_PLOT_RC)
     FOUR_PANEL_RC = {
         **LOCAL_PLOT_RC,
         "axes.labelsize": 22,
@@ -175,11 +250,26 @@ def _set_plot_style(profile_name):
     plt.rcParams.update(BASE_PLOT_RC)
 
 
+def set_plot_style(profile_name):
+    _set_plot_style(profile_name)
+    return dict(LOCAL_PLOT_RC)
+
+
+def get_plot_style(profile_name=None):
+    if profile_name is not None:
+        return set_plot_style(profile_name)
+    return dict(LOCAL_PLOT_RC)
+
+
 # Shared helpers
 def _load_npz_dict(npz_path):
     npz_path = Path(npz_path)
     with np.load(npz_path) as data:
         return {key: data[key] for key in data.files}
+
+
+def load_npz_dict(npz_path):
+    return _load_npz_dict(npz_path)
 
 
 def _save_figure(fig, output_path=None, **savefig_kwargs):
@@ -188,6 +278,42 @@ def _save_figure(fig, output_path=None, **savefig_kwargs):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path, **savefig_kwargs)
     return fig
+
+
+def save_figure(fig, output_path=None, **savefig_kwargs):
+    return _save_figure(fig, output_path=output_path, **savefig_kwargs)
+
+
+def _make_single_color_boxplot(ax, series, labels, color, xlabel, ylabel, title=None, logy=True):
+    bp = ax.boxplot(series, patch_artist=True, widths=0.6)
+    for idx, patch in enumerate(bp["boxes"]):
+        patch.set_facecolor(BOX_COLORS[idx % len(BOX_COLORS)])
+        patch.set_alpha(0.8)
+    for median in bp["medians"]:
+        median.set_color("black")
+        median.set_linewidth(2.0)
+    ax.set_xticks(np.arange(1, len(labels) + 1))
+    ax.set_xticklabels(labels)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    if title is not None:
+        ax.set_title(title, pad=TITLE_PAD)
+    if logy:
+        ax.set_yscale("log")
+    return bp
+
+
+def make_single_color_boxplot(ax, series, labels, color, xlabel, ylabel, title=None, logy=True):
+    return _make_single_color_boxplot(
+        ax,
+        series=series,
+        labels=labels,
+        color=color,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        title=title,
+        logy=logy,
+    )
 
 
 def _parse_heatmap_float(value):
@@ -1013,13 +1139,31 @@ def make_gk_summary_figure(
 def make_gk_mmd_vs_time_plot(npz_paths, output_path=None):
     method_specs = [
         ("baseline", "GD", COLORS["sgd"]),
-        ("natural", "Natural SGD", COLORS["natural"]),
+        ("natural", "PGD (Briol et al.)", COLORS["natural"]),
         ("adaptive", "PGD (ours)", COLORS["pgd"]),
     ]
 
-    with plt.rc_context(LOCAL_PLOT_RC):
-        fig, ax = plt.subplots(figsize=(10.5, 7.6), dpi=150)
-
+    if isinstance(npz_paths, (str, Path)):
+        data = _load_npz_dict(npz_paths)
+        series = []
+        for prefix, label, color in method_specs:
+            required = [
+                f"{prefix}_checkpoint_iterations",
+                f"{prefix}_checkpoint_elapsed_mean",
+                f"{prefix}_checkpoint_eval_mean",
+            ]
+            missing = [key for key in required if key not in data]
+            if missing:
+                raise KeyError(
+                    f"{npz_paths} is missing G-and-K checkpoint data for '{prefix}'. "
+                    "Regenerate this file with the updated g_and_k.py checkpoint saver."
+                )
+            times = np.asarray(data[f"{prefix}_checkpoint_elapsed_mean"], dtype=float)
+            mmds = np.sqrt(np.asarray(data[f"{prefix}_checkpoint_eval_mean"], dtype=float))
+            order = np.argsort(times)
+            series.append((times[order], mmds[order], label, color))
+    else:
+        series = []
         for prefix, label, color in method_specs:
             times = []
             mmds = []
@@ -1032,10 +1176,15 @@ def make_gk_mmd_vs_time_plot(npz_paths, output_path=None):
             times = np.asarray(times, dtype=float)
             mmds = np.asarray(mmds, dtype=float)
             order = np.argsort(times)
+            series.append((times[order], mmds[order], label, color))
 
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, ax = plt.subplots(figsize=(10.5, 7.6), dpi=150)
+
+        for times, mmds, label, color in series:
             ax.plot(
-                times[order],
-                mmds[order],
+                times,
+                mmds,
                 color=color,
                 marker="o",
                 linewidth=2.8,
@@ -1116,8 +1265,8 @@ def _lv_plot_branch(ax, hist, color, markevery, start_marker_color=None, start_m
 
 def _lv_draw_theta12_trajectory(ax, npz_paths, show_true=True, init_markers=None, init_colors=None):
     path_colors = [
-        (COLORS["gd"], COLORS["pgd"]),
-        (COLORS["gd"], COLORS["pgd"]),
+        (COLORS["gd"], COLORS["natural"], COLORS["pgd"]),
+        (COLORS["sgd_dark"], COLORS["natural_dark"], COLORS["pgd_dark"]),
     ]
     if init_markers is None:
         init_markers = ["o", "^", "D", "v"]
@@ -1128,12 +1277,15 @@ def _lv_draw_theta12_trajectory(ax, npz_paths, show_true=True, init_markers=None
     for idx, npz_path in enumerate(npz_paths):
         data = _load_npz_dict(npz_path)
         sgd = np.asarray(data["sgd_theta_history_mean"], dtype=float)[:, :2]
+        natural = np.asarray(data["natural_theta_history_mean"], dtype=float)[:, :2] if "natural_theta_history_mean" in data else None
         pgd = np.asarray(data["pgd_theta_history_mean"], dtype=float)[:, :2]
         theta_true = np.asarray(data["theta_true"], dtype=float)
-        sgd_color, pgd_color = path_colors[min(idx, len(path_colors) - 1)]
+        sgd_color, natural_color, pgd_color = path_colors[min(idx, len(path_colors) - 1)]
         init_marker = init_markers[idx % len(init_markers)]
         init_color = init_colors[idx % len(init_colors)]
         _lv_plot_branch(ax, sgd, sgd_color, max(1, len(sgd) // 22), start_marker_color=init_color, start_marker=init_marker)
+        if natural is not None:
+            _lv_plot_branch(ax, natural, natural_color, max(1, len(natural) // 22), start_marker_color=init_color, start_marker=init_marker)
         _lv_plot_branch(ax, pgd, pgd_color, max(1, len(pgd) // 22), start_marker_color=init_color, start_marker=init_marker)
 
     if show_true and theta_true is not None:
@@ -1164,11 +1316,13 @@ def _lv_draw_history_panel(
     init_markers=None,
     init_colors=None,
 ):
-    for idx, (data, color_sgd, color_pgd, ls_sgd, ls_pgd) in enumerate(bundles):
+    for idx, (data, color_sgd, color_natural, color_pgd, ls_sgd, ls_natural, ls_pgd) in enumerate(bundles):
         sgd_steps = np.asarray(data["sgd_history_steps"], dtype=float) + 1.0
         pgd_steps = np.asarray(data["pgd_history_steps"], dtype=float) + 1.0
         sgd_hist = np.asarray(data["sgd_theta_histories"], dtype=float)[:, :, param_idx]
         pgd_hist = np.asarray(data["pgd_theta_histories"], dtype=float)[:, :, param_idx]
+        natural_hist = np.asarray(data["natural_theta_histories"], dtype=float)[:, :, param_idx] if "natural_theta_histories" in data else None
+        natural_steps = np.asarray(data["natural_history_steps"], dtype=float) + 1.0 if "natural_history_steps" in data else None
 
         sgd_mean = sgd_hist.mean(axis=0)
         pgd_mean = pgd_hist.mean(axis=0)
@@ -1192,6 +1346,24 @@ def _lv_draw_history_panel(
             color=color_sgd,
             alpha=0.12,
         )
+        if natural_hist is not None:
+            natural_mean = natural_hist.mean(axis=0)
+            natural_se = natural_hist.std(axis=0, ddof=0) / np.sqrt(max(natural_hist.shape[0], 1))
+            ax.plot(
+                natural_steps,
+                natural_mean,
+                color=color_natural,
+                linestyle=ls_natural,
+                linewidth=2.0,
+                marker=None,
+            )
+            ax.fill_between(
+                natural_steps,
+                natural_mean - se_scale * natural_se,
+                natural_mean + se_scale * natural_se,
+                color=color_natural,
+                alpha=0.12,
+            )
         ax.plot(
             pgd_steps,
             pgd_mean,
@@ -1219,6 +1391,17 @@ def _lv_draw_history_panel(
                 s=220,
                 zorder=5,
             )
+            if natural_hist is not None:
+                ax.scatter(
+                    natural_steps[0],
+                    natural_mean[0],
+                    color=marker_color,
+                    marker=init_marker,
+                    edgecolors="none",
+                    linewidths=0.0,
+                    s=220,
+                    zorder=5,
+                )
             ax.scatter(
                 pgd_steps[0],
                 pgd_mean[0],
@@ -1365,12 +1548,12 @@ def make_lv_five_panel_summary(
         _lv_draw_theta12_trajectory(ax_traj, clean_npz_paths, show_true=True, init_markers=init_markers, init_colors=init_colors)
 
         clean_bundles = [
-            (clean_data[0], COLORS["gd"], COLORS["pgd"], CORRUPTION_LINESTYLES["0"], CORRUPTION_LINESTYLES["0"]),
-            (clean_data[1], COLORS["gd"], COLORS["pgd"], CORRUPTION_LINESTYLES["0"], CORRUPTION_LINESTYLES["0"]),
+            (clean_data[0], COLORS["gd"], COLORS["natural"], COLORS["pgd"], CORRUPTION_LINESTYLES["0"], CORRUPTION_LINESTYLES["0"], CORRUPTION_LINESTYLES["0"]),
+            (clean_data[1], COLORS["gd"], COLORS["natural"], COLORS["pgd"], CORRUPTION_LINESTYLES["0"], CORRUPTION_LINESTYLES["0"], CORRUPTION_LINESTYLES["0"]),
         ]
         cor_bundles = [
-            (cor_data[0], COLORS["gd"], COLORS["pgd"], CORRUPTION_LINESTYLES["15"], CORRUPTION_LINESTYLES["15"]),
-            (cor_data[1], COLORS["gd"], COLORS["pgd"], CORRUPTION_LINESTYLES["35"], CORRUPTION_LINESTYLES["35"]),
+            (cor_data[0], COLORS["gd"], COLORS["natural"], COLORS["pgd"], CORRUPTION_LINESTYLES["15"], CORRUPTION_LINESTYLES["15"], CORRUPTION_LINESTYLES["15"]),
+            (cor_data[1], COLORS["gd"], COLORS["natural"], COLORS["pgd"], CORRUPTION_LINESTYLES["35"], CORRUPTION_LINESTYLES["35"], CORRUPTION_LINESTYLES["35"]),
         ]
 
         _lv_draw_history_panel(ax_clean_1, clean_bundles, 0, r"$\theta_1$", theta_true, show_xlabel=False, se_scale=se_scale, init_markers=init_markers, init_colors=init_colors)
@@ -1382,6 +1565,7 @@ def make_lv_five_panel_summary(
 
         left_handles = [
             Line2D([0], [0], color=COLORS["gd"], linestyle="-", linewidth=2.2, label="GD"),
+            Line2D([0], [0], color=COLORS["natural"], linestyle="-", linewidth=2.2, label="PGD (Briol et al.)"),
             Line2D([0], [0], color=COLORS["pgd"], linestyle="-", linewidth=2.2, label="PGD"),
         ]
         right_handles = [
@@ -1395,9 +1579,9 @@ def make_lv_five_panel_summary(
             [h.get_label() for h in left_handles],
             loc="upper left",
             bbox_to_anchor=(0.09, 1.06),
-            ncol=2,
+            ncol=3,
             frameon=False,
-            fontsize=48,
+            fontsize=40,
             handlelength=2.2,
             columnspacing=1.4,
             handletextpad=0.6,
@@ -1406,10 +1590,10 @@ def make_lv_five_panel_summary(
             right_handles,
             [h.get_label() for h in right_handles],
             loc="upper right",
-            bbox_to_anchor=(0.92, 1.03),
+            bbox_to_anchor=(0.92, 1.06),
             ncol=3,
             frameon=False,
-            fontsize=35,
+            fontsize=40,
             handlelength=2.2,
             columnspacing=1.2,
             handletextpad=0.6,
@@ -1783,6 +1967,566 @@ def make_lv_step_size_boxplot(results_dir, output_path=None, metric="pgd_eval_lo
         return _save_figure(fig, output_path, bbox_inches="tight")
 
 
+def make_mmd_flow_figure(
+    comparison_npz,
+    mmd_vs_n_npz_paths,
+    mmd_vs_n_ns,
+    mmd_vs_iteration_npz,
+    lhs_rhs_npz,
+    output_path=None,
+    se_scale=1.96,
+):
+    _set_plot_style("mmd_flow")
+    return make_four_panel_figure(
+        comparison_npz=comparison_npz,
+        mmd_vs_n_npz_paths=mmd_vs_n_npz_paths,
+        mmd_vs_n_ns=mmd_vs_n_ns,
+        mmd_vs_iteration_npz=mmd_vs_iteration_npz,
+        lhs_rhs_npz=lhs_rhs_npz,
+        output_path=output_path,
+        se_scale=se_scale,
+    )
+
+
+def _theta_error_series_gk(npz_path):
+    data = _load_npz_dict(npz_path)
+    theta_true = np.asarray(data["theta_true"], dtype=float)
+    theta_finals = np.asarray(data["adaptive_thetas"], dtype=float)
+    return np.linalg.norm(theta_finals - theta_true[None, :], axis=1)
+
+
+def _theta_error_series_lv(npz_path):
+    data = _load_npz_dict(npz_path)
+    theta_true = np.asarray(data["theta_true"], dtype=float)
+    theta_finals = np.asarray(data["pgd_theta_finals"], dtype=float)
+    return np.linalg.norm(theta_finals - theta_true[None, :], axis=1)
+
+
+def _collect_gk_series_from_pattern(results_dir, pattern):
+    collected = []
+    for npz_path in sorted(Path(results_dir).rglob("g_n_k_fixed*.npz")):
+        match = pattern.search(npz_path.as_posix())
+        if match is None:
+            continue
+        value = float(match.group(1).replace("p", ".").replace("m", "-"))
+        collected.append((value, _theta_error_series_gk(npz_path)))
+    collected.sort(key=lambda item: item[0])
+    return collected
+
+
+def _collect_lv_series_from_filename_glob(results_dir, glob_pattern, filename_pattern):
+    collected = []
+    for npz_path in sorted(Path(results_dir).glob(glob_pattern)):
+        if npz_path.name.endswith("_summary.npz"):
+            continue
+        match = filename_pattern.match(npz_path.name)
+        if match is None:
+            continue
+        value = float(match.group(1).replace("p", ".").replace("m", "-"))
+        collected.append((value, _theta_error_series_lv(npz_path)))
+    collected.sort(key=lambda item: item[0])
+    return collected
+
+
+def _collect_gk_mn_theta_errors(results_dir):
+    pattern = re.compile(r"g_and_k_observation_model_grid_m_(?P<m>[^_]+)_n_(?P<n>[^/]+)/")
+    by_mn = {}
+    m_values = set()
+    n_values = set()
+    for npz_path in sorted(Path(results_dir).rglob("g_n_k_fixed*.npz")):
+        match = pattern.search(npz_path.as_posix())
+        if match is None:
+            continue
+        m = float(match.group("m").replace("p", ".").replace("m", "-"))
+        n = float(match.group("n").replace("p", ".").replace("m", "-"))
+        by_mn[(m, n)] = _theta_error_series_gk(npz_path)
+        m_values.add(m)
+        n_values.add(n)
+    return by_mn, sorted(m_values), sorted(n_values)
+
+
+def _collect_lv_mn_theta_errors(results_dir):
+    pattern = re.compile(r"lotka_volterra_observation_model_grid_m_(?P<m>[^_]+)_n_(?P<n>[^_]+)\.npz$")
+    by_mn = {}
+    m_values = set()
+    n_values = set()
+    for npz_path in sorted(Path(results_dir).glob("lotka_volterra_observation_model_grid_m_*_n_*.npz")):
+        match = pattern.match(npz_path.name)
+        if match is None:
+            continue
+        m = float(match.group("m").replace("p", ".").replace("m", "-"))
+        n = float(match.group("n").replace("p", ".").replace("m", "-"))
+        by_mn[(m, n)] = _theta_error_series_lv(npz_path)
+        m_values.add(m)
+        n_values.add(n)
+    return by_mn, sorted(m_values), sorted(n_values)
+
+
+def _draw_gk_step_boxplot(ax, results_dir):
+    pattern = re.compile(r"g_and_k_step_size_ablation_gamma_pgd0_sweep_([^/]+)/")
+    collected = {}
+    summary_path = Path(results_dir) / "g_and_k_step_size_ablation_gamma_pgd0_sweep_summary.npz"
+    if summary_path.exists():
+        summary = _load_npz_dict(summary_path)
+        if "output_paths" in summary and "sweep_values" in summary:
+            for gamma, npz_path in zip(summary["sweep_values"], summary["output_paths"]):
+                npz_path = Path(npz_path)
+                if npz_path.exists():
+                    collected[float(gamma)] = _theta_error_series_gk(npz_path)
+    for gamma, values in _collect_gk_series_from_pattern(results_dir, pattern):
+        collected[gamma] = values
+    ordered = sorted(collected.items(), key=lambda item: item[0])
+    _make_single_color_boxplot(
+        ax,
+        [values for _, values in ordered],
+        [f"{gamma:g}" for gamma, _ in ordered],
+        COLORS["pgd"],
+        "step size," r" $\gamma$",
+        r"$\|\theta_{\mathrm{final}}-\theta_{\mathrm{true}}\|_2$",
+        logy=True,
+    )
+
+
+def _draw_gk_decay_boxplot(ax, results_dir):
+    pattern = re.compile(r"g_and_k_decay_ablation_decay_sweep_([^/]+)/")
+    collected = _collect_gk_series_from_pattern(results_dir, pattern)
+    _make_single_color_boxplot(
+        ax,
+        [values for _, values in collected],
+        [f"{value:g}" for value, _ in collected],
+        COLORS["pgd"],
+        "lengthscale decay rate",
+        "",
+        logy=True,
+    )
+
+
+def _draw_gk_mn_boxplot(ax, results_dir):
+    by_mn, m_values, n_values = _collect_gk_mn_theta_errors(results_dir)
+    grouped_by_n = [np.concatenate([by_mn[(m, n)] for m in m_values]) for n in n_values]
+    _make_single_color_boxplot(
+        ax,
+        grouped_by_n,
+        [f"{n:g}" for n in n_values],
+        "#4c78a8",
+        r"$n$",
+        "",
+        logy=True,
+    )
+
+
+def _draw_gk_ridge_boxplot(ax, results_dir):
+    pattern = re.compile(r"g_and_k_regularization_ablation_lambda_scale_sweep_([^/]+)/")
+    collected = {}
+    summary_path = Path(results_dir) / "g_and_k_regularization_ablation_lambda_scale_sweep_summary.npz"
+    if summary_path.exists():
+        summary = _load_npz_dict(summary_path)
+        if "output_paths" in summary and "sweep_values" in summary:
+            for lam, npz_path in zip(summary["sweep_values"], summary["output_paths"]):
+                npz_path = Path(npz_path)
+                if npz_path.exists():
+                    collected[float(lam)] = _theta_error_series_gk(npz_path)
+    for npz_path in sorted(Path(results_dir).rglob("g_n_k_fixed*.npz")):
+        match = pattern.search(npz_path.as_posix())
+        if match is None:
+            continue
+        lam = float(match.group(1).replace("p", ".").replace("m", "-"))
+        collected[lam] = _theta_error_series_gk(npz_path)
+    ordered = sorted(collected.items(), key=lambda item: item[0])
+    if not ordered:
+        raise FileNotFoundError(f"No G-and-K ridge ablation .npz files found in {results_dir}")
+    _make_single_color_boxplot(
+        ax,
+        [values for _, values in ordered],
+        [f"{lam:g}" for lam, _ in ordered],
+        COLORS["pgd"],
+        r"ridge constant, $\lambda$",
+        "",
+        logy=True,
+    )
+
+
+def make_gk_ablation_summary(gk_step_dir, gk_decay_dir, gk_mn_dir, gk_ridge_dir, output_path=None, figsize=(24, 5), dpi=150):
+    _set_plot_style("gnk_ablation")
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, axes = plt.subplots(1, 4, figsize=figsize, dpi=dpi, gridspec_kw={"width_ratios": [1.0, 1.0, 1.0, 1.18]})
+        _draw_gk_step_boxplot(axes[0], gk_step_dir)
+        _draw_gk_decay_boxplot(axes[1], gk_decay_dir)
+        _draw_gk_mn_boxplot(axes[2], gk_mn_dir)
+        _draw_gk_ridge_boxplot(axes[3], gk_ridge_dir)
+        for ax in axes[1:]:
+            ax.set_ylabel("")
+        fig.tight_layout()
+        return _save_figure(fig, output_path, bbox_inches="tight")
+
+
+def _draw_lv_step_boxplot(ax, results_dir):
+    collected = _collect_lv_series_from_filename_glob(
+        results_dir,
+        "lotka_volterra_step_size_ablation_pgd_gamma_sweep_*.npz",
+        re.compile(r"lotka_volterra_step_size_ablation_pgd_gamma_sweep_([^_]+)\.npz$"),
+    )
+    _make_single_color_boxplot(
+        ax,
+        [values for _, values in collected],
+        [f"{value:g}" for value, _ in collected],
+        COLORS["pgd"],
+        "step size," r" $\gamma$",
+        r"$\|\theta_{\mathrm{final}}-\theta_{\mathrm{true}}\|_2$",
+        logy=True,
+    )
+
+
+def _draw_lv_decay_boxplot(ax, results_dir):
+    collected = _collect_lv_series_from_filename_glob(
+        results_dir,
+        "lotka_volterra_decay_ablation_pgd_decay_sweep_*.npz",
+        re.compile(r"lotka_volterra_decay_ablation_pgd_decay_sweep_([^_]+)\.npz$"),
+    )
+    _make_single_color_boxplot(
+        ax,
+        [values for _, values in collected],
+        [f"{value:g}" for value, _ in collected],
+        COLORS["pgd"],
+        "lengthscale decay rate",
+        "",
+        logy=True,
+    )
+
+
+def _draw_lv_mn_boxplot(ax, results_dir):
+    by_mn, m_values, n_values = _collect_lv_mn_theta_errors(results_dir)
+    grouped_by_n = [np.concatenate([by_mn[(m, n)] for m in m_values]) for n in n_values]
+    _make_single_color_boxplot(
+        ax,
+        grouped_by_n,
+        [f"{n:g}" for n in n_values],
+        "#4c78a8",
+        r"$n$",
+        "",
+        logy=True,
+    )
+
+
+def _draw_lv_ridge_boxplot(ax, results_dir):
+    collected = {}
+    summary_path = Path(results_dir) / "lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_summary.npz"
+    if summary_path.exists():
+        summary = _load_npz_dict(summary_path)
+        if "output_paths" in summary and "sweep_values" in summary:
+            for lam, npz_path in zip(summary["sweep_values"], summary["output_paths"]):
+                npz_path = Path(npz_path)
+                if npz_path.exists():
+                    collected[float(lam)] = _theta_error_series_lv(npz_path)
+    for lam, values in _collect_lv_series_from_filename_glob(
+        results_dir,
+        "lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_*.npz",
+        re.compile(r"lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_([^_]+)\.npz$"),
+    ):
+        collected[lam] = values
+    ordered = sorted(collected.items(), key=lambda item: item[0])
+    if not ordered:
+        raise FileNotFoundError(f"No LV ridge ablation .npz files found in {results_dir}")
+    _make_single_color_boxplot(
+        ax,
+        [values for _, values in ordered],
+        [f"{lam:g}" for lam, _ in ordered],
+        COLORS["pgd"],
+        r"ridge constant, $\lambda$",
+        "",
+        logy=True,
+    )
+
+
+def make_lv_ablation_summary(lv_step_dir, lv_decay_dir, lv_mn_dir, lv_ridge_dir, output_path=None, figsize=(24, 5), dpi=150):
+    _set_plot_style("lv_ablation")
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, axes = plt.subplots(1, 4, figsize=figsize, dpi=dpi, gridspec_kw={"width_ratios": [1.0, 1.0, 1.0, 1.18]})
+        _draw_lv_step_boxplot(axes[0], lv_step_dir)
+        _draw_lv_decay_boxplot(axes[1], lv_decay_dir)
+        _draw_lv_mn_boxplot(axes[2], lv_mn_dir)
+        _draw_lv_ridge_boxplot(axes[3], lv_ridge_dir)
+        for ax in axes[1:]:
+            ax.set_ylabel("")
+        fig.tight_layout()
+        return _save_figure(fig, output_path, bbox_inches="tight")
+
+
+def _theta_error_histories(data, histories_key, theta_true_key="theta_true"):
+    theta_true = np.asarray(data[theta_true_key], dtype=float)
+    histories = np.asarray(data[histories_key], dtype=float)
+    return np.linalg.norm(histories - theta_true[None, None, :], axis=-1)
+
+
+def _draw_gk_cross_method(ax, npz_path):
+    data = _load_npz_dict(npz_path)
+    baseline_err = _theta_error_histories(data, "baseline_theta_histories")
+    adaptive_sgd_err = _theta_error_histories(data, "adaptive_sgd_theta_histories")
+    pgd_err = _theta_error_histories(data, "adaptive_theta_histories")
+    fixed_pgd_err = _theta_error_histories(data, "fixed_pgd_theta_histories")
+    baseline_steps = np.asarray(data["baseline_history_steps"], dtype=float) + 1.0
+    adaptive_sgd_steps = np.asarray(data["adaptive_sgd_history_steps"], dtype=float) + 1.0
+    pgd_steps = np.asarray(data["adaptive_history_steps"], dtype=float) + 1.0
+    fixed_pgd_steps = np.asarray(data["fixed_pgd_history_steps"], dtype=float) + 1.0
+    ax.plot(baseline_steps, np.mean(baseline_err, axis=0), color=METHOD_COLORS["sgd"], label="GD (fixed $\ell$)")
+    ax.plot(adaptive_sgd_steps, np.mean(adaptive_sgd_err, axis=0), color=METHOD_COLORS["adaptive_sgd"], label="GD (adaptive $\ell$)")
+    ax.plot(pgd_steps, np.mean(pgd_err, axis=0), color=METHOD_COLORS["pgd"], label="PGD (adaptive $\ell$)")
+    ax.plot(fixed_pgd_steps, np.mean(fixed_pgd_err, axis=0), color=METHOD_COLORS["fixed_pgd"], label="PGD (fixed $\ell$)")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel(r"$\|\theta_{\mathrm{final}}-\theta_{\mathrm{true}}\|_2$")
+    ax.set_title("G-and-K distribution", pad=TITLE_PAD)
+    ax.legend(loc="best", frameon=True)
+
+
+def _draw_lv_cross_method(ax, npz_path, max_iteration=11000):
+    data = _load_npz_dict(npz_path)
+    sgd_err = _theta_error_histories(data, "sgd_theta_histories")
+    adaptive_sgd_err = _theta_error_histories(data, "adaptive_sgd_theta_histories")
+    pgd_err = _theta_error_histories(data, "pgd_theta_histories")
+    fixed_pgd_err = _theta_error_histories(data, "fixed_pgd_theta_histories")
+    sgd_steps = np.asarray(data["sgd_history_steps"], dtype=float) + 1.0
+    adaptive_sgd_steps = np.asarray(data["adaptive_sgd_history_steps"], dtype=float) + 1.0
+    pgd_steps = np.asarray(data["pgd_history_steps"], dtype=float) + 1.0
+    fixed_pgd_steps = np.asarray(data["fixed_pgd_history_steps"], dtype=float) + 1.0
+
+    def truncate(steps, errors):
+        mask = steps <= float(max_iteration)
+        return steps[mask], errors[:, mask]
+
+    sgd_steps, sgd_err = truncate(sgd_steps, sgd_err)
+    adaptive_sgd_steps, adaptive_sgd_err = truncate(adaptive_sgd_steps, adaptive_sgd_err)
+    pgd_steps, pgd_err = truncate(pgd_steps, pgd_err)
+    fixed_pgd_steps, fixed_pgd_err = truncate(fixed_pgd_steps, fixed_pgd_err)
+    ax.plot(sgd_steps, np.mean(sgd_err, axis=0), color=METHOD_COLORS["sgd"], label="GD (fixed $\ell$)")
+    ax.plot(adaptive_sgd_steps, np.mean(adaptive_sgd_err, axis=0), color=METHOD_COLORS["adaptive_sgd"], label="GD (adaptive $\ell$)")
+    ax.plot(pgd_steps, np.mean(pgd_err, axis=0), color=METHOD_COLORS["pgd"], label="PGD (adaptive $\ell$)")
+    ax.plot(fixed_pgd_steps, np.mean(fixed_pgd_err, axis=0), color=METHOD_COLORS["fixed_pgd"], label="PGD (fixed $\ell$)")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("")
+    ax.set_title("Lotka--Volterra", pad=TITLE_PAD)
+    ax.legend(loc="best", frameon=True)
+
+
+def make_cross_method_summary(gk_compare_npz, lv_compare_npz, output_path=None, figsize=(16, 5), dpi=150, max_iteration=11000):
+    _set_plot_style("cross_method")
+    with plt.rc_context(LOCAL_PLOT_RC):
+        fig, axes = plt.subplots(1, 2, figsize=figsize, dpi=dpi)
+        _draw_gk_cross_method(axes[0], gk_compare_npz)
+        _draw_lv_cross_method(axes[1], lv_compare_npz, max_iteration=max_iteration)
+        fig.tight_layout()
+        return _save_figure(fig, output_path, bbox_inches="tight")
+
+
+def collect_gnk_time_series(paths):
+    method_specs = [
+        ("baseline", "GD", COLORS["gd"]),
+        ("natural", "PGD (Briol et al.)", COLORS["natural"]),
+        ("adaptive", "PGD (ours)", COLORS["pgd"]),
+    ]
+    series = []
+    for prefix, label, color in method_specs:
+        times = []
+        mmds = []
+        for npz_path in paths:
+            data = _load_npz_dict(npz_path)
+            times.append(float(np.asarray(data[f"{prefix}_elapsed_mean"], dtype=float)))
+            mmds.append(np.sqrt(float(np.asarray(data[f"{prefix}_eval_mean"], dtype=float))))
+        times = np.asarray(times, dtype=float)
+        mmds = np.asarray(mmds, dtype=float)
+        order = np.argsort(times)
+        series.append({"label": label, "color": color, "time": times[order], "mmd": mmds[order]})
+    return series
+
+
+def _collect_lv_method_from_checkpoints(data, prefix, se_scale):
+    required = [
+        f"{prefix}_checkpoint_iterations",
+        f"{prefix}_checkpoint_elapsed_mean",
+        f"{prefix}_checkpoint_theta_mean",
+    ]
+    if any(key not in data for key in required):
+        return None
+    time = np.asarray(data[f"{prefix}_checkpoint_elapsed_mean"], dtype=float)
+    theta = np.asarray(data[f"{prefix}_checkpoint_theta_mean"], dtype=float)[..., :2]
+    theta_std_key = f"{prefix}_checkpoint_theta_std"
+    if theta_std_key in data:
+        theta_se = se_scale * np.asarray(data[theta_std_key], dtype=float)[..., :2]
+    else:
+        theta_se = np.zeros_like(theta)
+    iterations = np.asarray(data[f"{prefix}_checkpoint_iterations"], dtype=np.int32)
+    order = np.argsort(time)
+    return {
+        "iterations": iterations[order],
+        "time": time[order],
+        "theta": theta[order],
+        "theta_se": theta_se[order],
+    }
+
+
+def collect_lv_single_time_record(label, npz_path, se_scale, init_time_factor, style=None, linestyles=None):
+    data = _load_npz_dict(npz_path)
+    theta_true = np.asarray(data["theta_true"], dtype=float)
+    theta0 = np.asarray(data["theta0"], dtype=float)
+    sgd = _collect_lv_method_from_checkpoints(data, "sgd", se_scale)
+    natural = _collect_lv_method_from_checkpoints(data, "natural", se_scale)
+    pgd = _collect_lv_method_from_checkpoints(data, "pgd", se_scale)
+    if sgd is None or pgd is None:
+        raise KeyError(f"{npz_path} is missing LV checkpoint data for SGD and/or PGD.")
+    time_arrays = [sgd["time"], pgd["time"]]
+    if natural is not None:
+        time_arrays.append(natural["time"])
+    min_time = min(float(np.min(arr)) for arr in time_arrays if arr.size)
+    max_time = max(float(np.max(arr)) for arr in time_arrays if arr.size)
+    return {
+        "label": label,
+        "style": style or {},
+        "linestyles": linestyles or {"sgd": "-", "natural": "-", "pgd": "-"},
+        "has_natural": natural is not None,
+        "theta_true": theta_true,
+        "theta0": theta0,
+        "init_time": init_time_factor * min_time,
+        "left_limit": 0.8 * init_time_factor * min_time,
+        "max_time": max_time,
+        "sgd_time": sgd["time"],
+        "pgd_time": pgd["time"],
+        "sgd_theta": sgd["theta"],
+        "pgd_theta": pgd["theta"],
+        "sgd_theta_se": sgd["theta_se"],
+        "pgd_theta_se": pgd["theta_se"],
+        "natural_time": None if natural is None else natural["time"],
+        "natural_theta": None if natural is None else natural["theta"],
+        "natural_theta_se": None if natural is None else natural["theta_se"],
+    }
+
+
+def collect_lv_time_series(path_map, se_scale=1.96, init_time_factor=0.85):
+    init_styles = {
+        "50, 60": {"marker": "o", "init_color": "#7B3294"},
+        "90, 90": {"marker": "^", "init_color": "#4D4D4D"},
+    }
+    records = []
+    global_max_time = 0.0
+    left_limit = np.inf
+    theta_true = None
+    for init_label, npz_path in path_map.items():
+        record = collect_lv_single_time_record(
+            label=init_label,
+            npz_path=npz_path,
+            se_scale=se_scale,
+            init_time_factor=init_time_factor,
+            style=init_styles.get(init_label, {"marker": "o", "init_color": "#4D4D4D"}),
+        )
+        records.append(record)
+        theta_true = record["theta_true"]
+        global_max_time = max(global_max_time, record["max_time"])
+        left_limit = min(left_limit, record["left_limit"])
+    return {"records": records, "theta_true": theta_true, "left_limit": left_limit, "global_max_time": global_max_time}
+
+
+def collect_lv_corruption_time_series(path_map, se_scale=1.96, init_time_factor=0.85):
+    corruption_styles = {
+        "15%": {"sgd": CORRUPTION_LINESTYLES["15"], "natural": CORRUPTION_LINESTYLES["15"], "pgd": CORRUPTION_LINESTYLES["15"]},
+        "35%": {"sgd": CORRUPTION_LINESTYLES["35"], "natural": CORRUPTION_LINESTYLES["35"], "pgd": CORRUPTION_LINESTYLES["35"]},
+    }
+    records = []
+    global_max_time = 0.0
+    left_limit = np.inf
+    theta_true = None
+    for label, npz_path in path_map.items():
+        record = collect_lv_single_time_record(
+            label=label,
+            npz_path=npz_path,
+            se_scale=se_scale,
+            init_time_factor=init_time_factor,
+            style={"marker": "o", "init_color": "#4D4D4D"},
+            linestyles=corruption_styles.get(label, {"sgd": "-", "natural": "-", "pgd": "-"}),
+        )
+        records.append(record)
+        theta_true = record["theta_true"]
+        global_max_time = max(global_max_time, record["max_time"])
+        left_limit = min(left_limit, record["left_limit"])
+    return {"records": records, "theta_true": theta_true, "left_limit": left_limit, "global_max_time": global_max_time}
+
+
+def draw_lv_time_axes(lv_axes, lv_series, title, show_natural=True):
+    for record in lv_series["records"]:
+        for param_idx, ax in enumerate(lv_axes):
+            sgd_time = np.concatenate(([record["init_time"]], record["sgd_time"]))
+            sgd_theta = np.concatenate(([record["theta0"][param_idx]], record["sgd_theta"][:, param_idx]))
+            pgd_time = np.concatenate(([record["init_time"]], record["pgd_time"]))
+            pgd_theta = np.concatenate(([record["theta0"][param_idx]], record["pgd_theta"][:, param_idx]))
+            ax.plot(sgd_time, sgd_theta, color=COLORS["gd"], linestyle=record["linestyles"]["sgd"], linewidth=2.0)
+            ax.fill_between(
+                record["sgd_time"],
+                record["sgd_theta"][:, param_idx] - record["sgd_theta_se"][:, param_idx],
+                record["sgd_theta"][:, param_idx] + record["sgd_theta_se"][:, param_idx],
+                color=COLORS["gd"], alpha=0.10, linewidth=0,
+            )
+            if show_natural and record.get("has_natural", False):
+                natural_time = np.concatenate(([record["init_time"]], record["natural_time"]))
+                natural_theta = np.concatenate(([record["theta0"][param_idx]], record["natural_theta"][:, param_idx]))
+                ax.plot(natural_time, natural_theta, color=COLORS["natural"], linestyle=record["linestyles"].get("natural", "-"), linewidth=2.0)
+                ax.fill_between(
+                    record["natural_time"],
+                    record["natural_theta"][:, param_idx] - record["natural_theta_se"][:, param_idx],
+                    record["natural_theta"][:, param_idx] + record["natural_theta_se"][:, param_idx],
+                    color=COLORS["natural"], alpha=0.10, linewidth=0,
+                )
+            ax.plot(pgd_time, pgd_theta, color=COLORS["pgd"], linestyle=record["linestyles"]["pgd"], linewidth=2.0)
+            ax.fill_between(
+                record["pgd_time"],
+                record["pgd_theta"][:, param_idx] - record["pgd_theta_se"][:, param_idx],
+                record["pgd_theta"][:, param_idx] + record["pgd_theta_se"][:, param_idx],
+                color=COLORS["pgd"], alpha=0.10, linewidth=0,
+            )
+            ax.axhline(float(lv_series["theta_true"][param_idx]), color="0.35", linestyle="--", linewidth=1.2)
+            ax.set_ylabel(rf"$\theta_{param_idx + 1}$")
+            ax.grid(True, which="major", alpha=0.24, linewidth=0.8)
+    for ax in lv_axes:
+        ax.set_xscale("log")
+        ax.set_xlim(lv_series["left_limit"], lv_series["global_max_time"] * 1.03)
+    lv_axes[0].set_title(title, fontsize=21, pad=10)
+    lv_axes[0].tick_params(labelbottom=False)
+    lv_axes[-1].set_xlabel("Time (s)")
+
+
+def make_combined_time_summary(gnk_series, lv_series, lv_corruption_series, output_path=None):
+    _set_plot_style("combined_time")
+    with plt.rc_context(PLOT_RC):
+        fig = plt.figure(figsize=(22.4, 5), dpi=150)
+        grid = fig.add_gridspec(2, 3, width_ratios=[1.08, 1.0, 1.0], wspace=0.34, hspace=0.18)
+        ax_gnk = fig.add_subplot(grid[:, 0])
+        lv_axes = [fig.add_subplot(grid[0, 1]), fig.add_subplot(grid[1, 1])]
+        lv_corruption_axes = [fig.add_subplot(grid[0, 2]), fig.add_subplot(grid[1, 2])]
+        for series in gnk_series:
+            ax_gnk.plot(series["time"], series["mmd"], color=series["color"], marker="o", linewidth=2.8, markersize=6.5, label=series["label"])
+        ax_gnk.set_xscale("log")
+        ax_gnk.set_yscale("log")
+        ax_gnk.set_xlabel("Time (s)")
+        ax_gnk.set_ylabel(r"$\mathrm{MMD}_{\ell_\infty}(\mathbb{P}_\theta, \mathbb{Q})$")
+        ax_gnk.set_title("G-and-K", fontsize=21, pad=10)
+        ax_gnk.grid(True, which="major", alpha=0.22, linewidth=0.8)
+        draw_lv_time_axes(lv_axes, lv_series, "Lotka-Volterra")
+        draw_lv_time_axes(lv_corruption_axes, lv_corruption_series, "Lotka-Volterra (corruption)", show_natural=True)
+        for ax in lv_corruption_axes:
+            upper = ax.get_ylim()[1]
+            ax.set_ylim(bottom=50.0, top=upper)
+        top_handles = [
+            Line2D([0], [0], color=COLORS["gd"], lw=2.8, marker="o", label="GD"),
+            Line2D([0], [0], color=COLORS["natural"], lw=2.8, marker="o", label="PGD (Briol et al.)"),
+            Line2D([0], [0], color=COLORS["pgd"], lw=2.8, marker="o", label="PGD (ours)"),
+            Line2D([0], [0], color="black", lw=2.2, linestyle=CORRUPTION_LINESTYLES["0"], label="0\\%"),
+            Line2D([0], [0], color="black", lw=2.2, linestyle=CORRUPTION_LINESTYLES["15"], label="15\\%"),
+            Line2D([0], [0], color="black", lw=2.2, linestyle=CORRUPTION_LINESTYLES["35"], label="35\\%"),
+        ]
+        fig.legend(top_handles, [handle.get_label() for handle in top_handles], loc="upper center", bbox_to_anchor=(0.5, 1.09), ncol=6, frameon=False, fontsize=24, columnspacing=1.1, handletextpad=0.6)
+        return _save_figure(fig, output_path, bbox_inches="tight")
+
+
 def _run_if_inputs_exist(label, input_paths, output_path, plotter):
     missing_inputs = [Path(path) for path in input_paths if not Path(path).exists()]
     if missing_inputs:
@@ -1851,43 +2595,17 @@ def run_gnk(root, figures_dir):
         ),
     )
 
-    gk_time_npz_paths = [
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_100.npz",
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_300.npz",
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_1000.npz",
-        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_3000.npz",
-    ]
-    gk_time_output = figures_dir / "gk_mmd_vs_time.pdf"
-    _run_if_inputs_exist(
-        "G-and-K MMD-vs-time figure",
-        gk_time_npz_paths,
-        gk_time_output,
-        lambda: make_gk_mmd_vs_time_plot(gk_time_npz_paths, output_path=gk_time_output),
-    )
-
-    gk_heatmap_dir = root / "ablations" / "gk_heatmap"
-    gk_heatmap_output = figures_dir / "gk_theta_error_ablation.pdf"
-    if gk_heatmap_dir.exists():
-        try:
-            fig = make_gk_theta_error_heatmap(gk_heatmap_dir, gk_heatmap_output)
-            print(f"Saved G-and-K theta-error heatmap to {gk_heatmap_output}")
-            plt.close(fig)
-        except ValueError as exc:
-            print(f"Skipping G-and-K theta-error heatmap: {exc}")
-    else:
-        print(f"Skipping G-and-K theta-error heatmap because {gk_heatmap_dir} is missing")
-
 
 def run_lv(root, figures_dir):
     _set_plot_style("lv")
     lv_dir = root / "results" / "lv"
     lv_clean_npz_paths = [
-        lv_dir / "lv_results_50_60.npz",
-        lv_dir / "lv_results_90_90.npz",
+        lv_dir / "lotka_volterra_results_50_60.npz",
+        lv_dir / "lotka_volterra_results_90_90.npz",
     ]
     lv_corruption_npz_paths = [
-        lv_dir / "lv_results_60_60_c15.npz",
-        lv_dir / "lv_results_60_60_c35.npz",
+        lv_dir / "lotka_volterra_results_60_60_c15.npz",
+        lv_dir / "lotka_volterra_results_60_60_c35.npz",
     ]
     lv_summary_output = figures_dir / "lv_summary.pdf"
     _run_if_inputs_exist(
@@ -1904,68 +2622,116 @@ def run_lv(root, figures_dir):
         ),
     )
 
-    lv_time_budget_paths = {
-        "50, 60": [
-            lv_dir / "lotka_volterra_results_50_60_10.npz",
-            lv_dir / "lotka_volterra_results_50_60_1000.npz",
-            lv_dir / "lotka_volterra_results_50_60_3000.npz",
-            lv_dir / "lotka_volterra_results_50_60_10000.npz",
-            lv_dir / "lotka_volterra_results_50_60_20000.npz",
-        ],
-        "90, 90": [
-            lv_dir / "lotka_volterra_results_90_90_10.npz",
-            lv_dir / "lotka_volterra_results_90_90_1000.npz",
-            lv_dir / "lotka_volterra_results_90_90_3000.npz",
-            lv_dir / "lotka_volterra_results_90_90_10000.npz",
-            lv_dir / "lotka_volterra_results_90_90_20000.npz",
-        ],
-    }
-    lv_time_budget_output = figures_dir / "lv_theta_vs_time_budget.pdf"
+def run_gnk_ablations(root, figures_dir):
+    _set_plot_style("gnk_ablation")
+    ablations_dir = root / "ablations"
+    gk_step_dir = ablations_dir / "gk_gamma"
+    gk_decay_dir = ablations_dir / "gk_decay"
+    gk_mn_dir = ablations_dir / "gk_mn_grid"
+    gk_ridge_dir = ablations_dir / "gk_ridge"
+    gk_ablation_output = figures_dir / "gk_ablation_summary.pdf"
+    input_paths = [
+        *list(gk_step_dir.rglob("g_n_k_fixed*.npz")),
+        *list(gk_decay_dir.rglob("g_n_k_fixed*.npz")),
+        *list(gk_mn_dir.rglob("g_n_k_fixed*.npz")),
+        *list(gk_ridge_dir.rglob("g_n_k_fixed*.npz")),
+    ]
     _run_if_inputs_exist(
-        "LV theta-vs-time-budget figure",
-        [path for paths in lv_time_budget_paths.values() for path in paths],
-        lv_time_budget_output,
-        lambda: make_lv_theta_vs_time_budget_plot(lv_time_budget_paths, output_path=lv_time_budget_output),
-    )
-
-    lv_corruption_time_paths = {
-        "c15": [
-            lv_dir / "lotka_volterra_results_60_60_c15_10.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_1000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_3000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_10000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c15_12000.npz",
-        ],
-        "c35": [
-            lv_dir / "lotka_volterra_results_60_60_c35_10.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_1000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_3000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_10000.npz",
-            lv_dir / "lotka_volterra_results_60_60_c35_12000.npz",
-        ],
-    }
-    lv_corruption_time_output = figures_dir / "lv_corruption_theta_vs_time.pdf"
-    _run_if_inputs_exist(
-        "LV corruption theta-vs-time figure",
-        [path for paths in lv_corruption_time_paths.values() for path in paths],
-        lv_corruption_time_output,
-        lambda: make_lv_corruption_theta_vs_time_plot(
-            lv_corruption_time_paths,
-            output_path=lv_corruption_time_output,
+        "G-and-K ablation summary",
+        input_paths,
+        gk_ablation_output,
+        lambda: make_gk_ablation_summary(
+            gk_step_dir=gk_step_dir,
+            gk_decay_dir=gk_decay_dir,
+            gk_mn_dir=gk_mn_dir,
+            gk_ridge_dir=gk_ridge_dir,
+            output_path=gk_ablation_output,
+            figsize=(24, 5),
+            dpi=SUMMARY_DPI,
         ),
     )
 
-    lv_heatmap_dir = root / "ablations" / "lv_heatmap"
-    lv_heatmap_output = figures_dir / "lv_theta_error_ablation.pdf"
-    if lv_heatmap_dir.exists():
-        try:
-            fig = make_lv_theta_error_heatmap(lv_heatmap_dir, lv_heatmap_output)
-            print(f"Saved LV theta-error heatmap to {lv_heatmap_output}")
-            plt.close(fig)
-        except ValueError as exc:
-            print(f"Skipping LV theta-error heatmap: {exc}")
-    else:
-        print(f"Skipping LV theta-error heatmap because {lv_heatmap_dir} is missing")
+
+def run_lv_ablations(root, figures_dir):
+    _set_plot_style("lv_ablation")
+    ablations_dir = root / "ablations"
+    lv_step_dir = ablations_dir / "lv_gamma"
+    lv_decay_dir = ablations_dir / "lv_decay"
+    lv_mn_dir = ablations_dir / "lv_mn_grid"
+    lv_ridge_dir = ablations_dir / "lv_ridge"
+    lv_ablation_output = figures_dir / "lv_ablation_summary.pdf"
+    input_paths = [
+        *list(lv_step_dir.glob("lotka_volterra_step_size_ablation_pgd_gamma_sweep_*.npz")),
+        *list(lv_decay_dir.glob("lotka_volterra_decay_ablation_pgd_decay_sweep_*.npz")),
+        *list(lv_mn_dir.glob("lotka_volterra_observation_model_grid_m_*_n_*.npz")),
+        *list(lv_ridge_dir.glob("lotka_volterra_regularization_ablation_pgd_lambda_scale_sweep_*.npz")),
+    ]
+    _run_if_inputs_exist(
+        "LV ablation summary",
+        input_paths,
+        lv_ablation_output,
+        lambda: make_lv_ablation_summary(
+            lv_step_dir=lv_step_dir,
+            lv_decay_dir=lv_decay_dir,
+            lv_mn_dir=lv_mn_dir,
+            lv_ridge_dir=lv_ridge_dir,
+            output_path=lv_ablation_output,
+            figsize=(24, 5),
+            dpi=SUMMARY_DPI,
+        ),
+    )
+
+
+def run_cross_method(root, figures_dir):
+    _set_plot_style("cross_method")
+    gk_compare_npz = root / "cross_method" / "gnk" / "g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
+    lv_compare_npz = root / "cross_method" / "lv" / "lotka_volterra_results_pgd_vs_sgd.npz"
+    output_path = figures_dir / "cross_method_summary.pdf"
+    _run_if_inputs_exist(
+        "cross-method summary",
+        [gk_compare_npz, lv_compare_npz],
+        output_path,
+        lambda: make_cross_method_summary(
+            gk_compare_npz=gk_compare_npz,
+            lv_compare_npz=lv_compare_npz,
+            output_path=output_path,
+            figsize=(16, 5),
+            dpi=SUMMARY_DPI,
+            max_iteration=11000,
+        ),
+    )
+
+
+def run_combined_time(root, figures_dir):
+    _set_plot_style("combined_time")
+    gnk_dir = root / "results" / "gnk"
+    lv_dir = root / "results" / "lv"
+    gnk_time_paths = [
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_100.npz",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_300.npz",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_1000.npz",
+        gnk_dir / "g_n_k_theta0_3p500_2p000_0p600_m0p800_3000.npz",
+    ]
+    lv_time_budget_paths = {
+        "50, 60": lv_dir / "lotka_volterra_results_50_60.npz",
+        "90, 90": lv_dir / "lotka_volterra_results_90_90.npz",
+    }
+    lv_corruption_time_paths = {
+        "15%": lv_dir / "lotka_volterra_results_60_60_c15.npz",
+        "35%": lv_dir / "lotka_volterra_results_60_60_c35.npz",
+    }
+    output_path = figures_dir / "combined_time_plots.pdf"
+    _run_if_inputs_exist(
+        "combined time summary",
+        [*gnk_time_paths, *lv_time_budget_paths.values(), *lv_corruption_time_paths.values()],
+        output_path,
+        lambda: make_combined_time_summary(
+            gnk_series=collect_gnk_time_series(gnk_time_paths),
+            lv_series=collect_lv_time_series(lv_time_budget_paths),
+            lv_corruption_series=collect_lv_corruption_time_series(lv_corruption_time_paths),
+            output_path=output_path,
+        ),
+    )
 
 
 def main():
@@ -1976,7 +2742,19 @@ def main():
         "experiment",
         nargs="?",
         default="all",
-        choices=("all", "mmd_flow", "mmd-flow", "gnk", "gk", "g_and_k", "lv"),
+        choices=(
+            "all",
+            "mmd_flow",
+            "mmd-flow",
+            "gnk",
+            "gk",
+            "g_and_k",
+            "lv",
+            "gk_ablation",
+            "lv_ablation",
+            "cross_method",
+            "combined_time",
+        ),
         help="Experiment to run. Defaults to all.",
     )
     parser.add_argument(
@@ -2003,6 +2781,14 @@ def main():
         run_gnk(root, figures_dir)
     if experiment in ("all", "lv"):
         run_lv(root, figures_dir)
+    if experiment in ("all", "gk_ablation"):
+        run_gnk_ablations(root, figures_dir)
+    if experiment in ("all", "lv_ablation"):
+        run_lv_ablations(root, figures_dir)
+    if experiment in ("all", "cross_method"):
+        run_cross_method(root, figures_dir)
+    if experiment in ("all", "combined_time"):
+        run_combined_time(root, figures_dir)
 
 
 if __name__ == "__main__":

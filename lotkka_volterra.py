@@ -1542,7 +1542,7 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "regularization_ablation"
+    experiment_mode = "single_run"
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
