@@ -16,7 +16,12 @@
     1,
     2,
     3,
-    4
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
   ],
   "tie_target_batch_to_m_obs": true,
   "result_file": "ablations/lv_mn_grid/lotka_volterra_observation_model_grid_summary.npz"

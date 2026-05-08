@@ -2,10 +2,16 @@
   "sweep_name": "lambda_scale_sweep",
   "sweep_param": "lambda_scale",
   "sweep_values": [
-    0.001
+    0.0001,
+    0.001,
+    0.01,
+    1.0
   ],
   "output_paths": [
-    "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_0p001/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
+    "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_0p0001/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
+    "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_0p001/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
+    "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_0p01/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
+    "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_1/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
   ],
   "n_model": 600,
   "seeds": [
@@ -13,10 +19,18 @@
     1,
     2,
     3,
-    4
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
   ],
   "adaptive_eval_means": [
-    4.528291660818928e-05
+    3.1280795040782346e-05,
+    3.138399696965976e-05,
+    3.2348076670070245e-05,
+    0.0003613075949710779
   ],
   "result_file": "ablations/gk_ridge/g_and_k_regularization_ablation_lambda_scale_sweep_summary.npz"
 }

@@ -1542,7 +1542,7 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "single_run"
+    experiment_mode = "regularization_ablation"
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
@@ -1584,6 +1584,11 @@ if __name__ == "__main__":
     ablation_kwargs = dict(
         theta0_by_seed=np.array(
             [
+                [60.0, 60.0],
+                [90.0, 90.0],
+                [75.0, 75.0],
+                [50.0, 60.0],
+                [50.0, 50.0],
                 [60.0, 60.0],
                 [90.0, 90.0],
                 [75.0, 75.0],
@@ -1650,7 +1655,7 @@ if __name__ == "__main__":
             output_dir="ablations/lv_gamma",
             gamma_values=[1.0, 10.0, 30.0, 100.0, 300.0],#10.0, 30.0, 100.0, 300.0
             sweep_param="pgd_gamma",
-            seeds=range(5),
+            seeds=range(10),
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,
@@ -1663,7 +1668,7 @@ if __name__ == "__main__":
             output_dir="ablations/lv_decay",
             decay_values=decay_sweep_values,
             sweep_param="pgd_decay",
-            seeds=range(5),
+            seeds=range(10),
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,
@@ -1676,7 +1681,7 @@ if __name__ == "__main__":
             output_dir="ablations/lv_mn_grid",
             m_obs_values=[200],
             n_model_values=[1, 10, 25, 50, 100, 200], #25, 50, 100, 200
-            seeds=range(5),
+            seeds=range(10),
             tie_target_batch_to_m_obs=True,
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
@@ -1690,7 +1695,7 @@ if __name__ == "__main__":
             output_dir="ablations/lv_lengthscale",
             sweep_param=lengthscale_sweep_param,
             sweep_values=lengthscale_sweep_values,
-            seeds=range(5),
+            seeds=range(10),
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,
@@ -1702,7 +1707,7 @@ if __name__ == "__main__":
         result = run_regularization_ablation(
             output_dir="ablations/lv_ridge",
             lambda_scales=[1e-4, 1e-3, 1e-2, 1e-0],
-            seeds=range(5),
+            seeds=range(10),
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,
@@ -1718,7 +1723,7 @@ if __name__ == "__main__":
             secondary_lengthscale_param=secondary_lengthscale_grid_param,
             secondary_lengthscale_values=secondary_lengthscale_grid_values,
             lambda_scales=[1e-3],
-            seeds=range(5),
+            seeds=range(10),
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,

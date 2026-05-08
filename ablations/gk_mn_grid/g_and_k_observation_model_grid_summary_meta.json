@@ -1,0 +1,29 @@
+{
+  "grid_name": "observation_model_grid",
+  "n_obs_full_values": [
+    1000
+  ],
+  "n_model_values": [
+    2,
+    10,
+    50,
+    100,
+    300,
+    600,
+    1000
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "tie_target_batch_to_n_obs": true,
+  "result_file": "ablations/gk_mn_grid/g_and_k_observation_model_grid_summary.npz"
+}

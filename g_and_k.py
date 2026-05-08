@@ -1722,7 +1722,7 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "single_run"
+    experiment_mode = "observation_model_grid"
 
     # single_run_theta0_by_seed = np.array(
     #     [
@@ -1763,6 +1763,11 @@ if __name__ == "__main__":
                 [2.0, 2.1, 0.5, -0.85],
                 [2.0, 2.0, 1.3, -0.6],
                 [3.7, 1.8, 0.6, -0.9],
+                [3.5, 2.0, 0.6, -0.8],
+                [3.4, 1.9, 0.7, -0.75],
+                [2.0, 2.1, 0.5, -0.85],
+                [2.0, 2.0, 1.3, -0.6],
+                [3.7, 1.8, 0.6, -0.9]
             ],
             dtype=np.float64,
         ),
@@ -1789,7 +1794,7 @@ if __name__ == "__main__":
     lengthscale_grid_values = [0.1, 0.3, 1.0, 3.0, 10.0]
     secondary_lengthscale_grid_param = "ell0"
     secondary_lengthscale_grid_values = [2.0, 5.0, 10.0, 20.0]
-    decay_sweep_values = [0.99]
+    decay_sweep_values = [0.5, 0.8, 0.9, 0.95, 0.99]
 
     if experiment_mode == "single_run":
         result = run_for_n_model(
@@ -1811,9 +1816,9 @@ if __name__ == "__main__":
     elif experiment_mode == "step_size_ablation":
         result = run_step_size_ablation_for_n_model(
             n_model=600,
-            seeds=range(5),
+            seeds=range(10),
             output_dir="ablations/gk_gamma",
-            gamma_values=[10],#step_size_ablation
+            gamma_values=[0.03, 0.1, 0.3, 1, 10, 100],#step_size_ablation
             sweep_param="gamma_pgd0",
             **ablation_kwargs,
         )
@@ -1824,7 +1829,7 @@ if __name__ == "__main__":
     elif experiment_mode == "decay_ablation":
         result = run_decay_ablation_for_n_model(
             n_model=600,
-            seeds=range(5),
+            seeds=range(10),
             output_dir="ablations/gk_decay",
             decay_values=decay_sweep_values,
             sweep_param="decay",
@@ -1836,9 +1841,9 @@ if __name__ == "__main__":
 
     elif experiment_mode == "observation_model_grid":
         result = run_observation_model_grid(
-            seeds=range(5),
-            n_obs_full_values=[300, 600, 1000],
-            n_model_values=[10, 50],
+            seeds=range(10),
+            n_obs_full_values=[1000],
+            n_model_values=[2, 10, 50, 100, 300, 600, 1000],
             output_dir="ablations/gk_mn_grid",
             tie_target_batch_to_n_obs=True,
             **ablation_kwargs,
@@ -1850,7 +1855,7 @@ if __name__ == "__main__":
     elif experiment_mode == "lengthscale_ablation":
         result = run_lengthscale_ablation_for_n_model(
             n_model=600,
-            seeds=range(5),
+            seeds=range(10),
             output_dir="ablations/gk_lengthscale",
             sweep_param=lengthscale_sweep_param,
             sweep_values=lengthscale_sweep_values,
@@ -1863,9 +1868,9 @@ if __name__ == "__main__":
     elif experiment_mode == "regularization_ablation":
         result = run_regularization_ablation_for_n_model(
             n_model=600,
-            seeds=range(5),
+            seeds=range(10),
             output_dir="ablations/gk_ridge",
-            lambda_scales=[1e-3],
+            lambda_scales=[1e-4, 1e-3, 1e-2, 1e-0],
             **ablation_kwargs,
         )
 
