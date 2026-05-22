@@ -124,6 +124,16 @@ def make_adaptive_ell_schedule(n_steps, ell0, ell_min, decay):
     return np.maximum(ell_min, ell0 * (decay ** ts))
 
 
+def make_pgd_step_size_schedule(n_steps, mode, gamma0, growth_exponent=0.99):
+    ts = np.arange(n_steps, dtype=np.float64)
+
+    if mode == "fixed":
+        return np.full((n_steps,), gamma0, dtype=np.float64)
+    if mode == "adaptive_decay":
+        return gamma0 / ((ts + 1.0) ** growth_exponent)
+    raise ValueError("mode must be 'fixed' or 'adaptive_decay'")
+
+
 # ============================================================
 # 3. Parameter transform: theta <-> phi
 # ============================================================
@@ -488,6 +498,8 @@ def run_adaptive_pgd(
     decay,
     ell_eval,
     ell_schedule=None,
+    pgd_step_size_mode="fixed",
+    pgd_step_growth_exponent=0.99,
     n_eval_model=2000,
     print_every=20,
     history_every=1,
@@ -514,6 +526,12 @@ def run_adaptive_pgd(
         ell_schedule = np.asarray(ell_schedule, dtype=np.float64)
         if ell_schedule.shape[0] != n_steps_pgd:
             raise ValueError("ell_schedule must have length n_steps_pgd.")
+    gamma_schedule = make_pgd_step_size_schedule(
+        n_steps=n_steps_pgd,
+        mode=pgd_step_size_mode,
+        gamma0=gamma_pgd0,
+        growth_exponent=pgd_step_growth_exponent,
+    )
 
     for t in range(n_steps_pgd):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
@@ -530,7 +548,7 @@ def run_adaptive_pgd(
 
         ell_t = jnp.asarray(ell_schedule[t], dtype=jnp.float64)
         ell_eval_t = jnp.asarray(ell_eval, dtype=jnp.float64)
-        gamma_t = jnp.asarray(gamma_pgd0, dtype=jnp.float64)
+        gamma_t = jnp.asarray(gamma_schedule[t], dtype=jnp.float64)
         lambda_t = jnp.asarray(lambda_scale, dtype=jnp.float64)
 
         phi, train_loss, direction, theta_delta, jac_col_norms = pgd_step_phi(
@@ -562,29 +580,29 @@ def run_adaptive_pgd(
             theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
             jac_col_norm_history.append(np.array(jac_col_norms, dtype=np.float64))
             # Optional diagnostics, disabled for fairer runtime comparisons:
-            # _, x_diag = sample_gk(key_eval, theta, n_model)
-            # lhs, rhs = lhs_rhs_values_gk(
-            #     x_model=x_diag,
-            #     y_target=y_obs_full,
-            #     ell_t=ell_t,
-            #     ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
-            # )
-            # lhs_history.append(float(lhs))
-            # rhs_history.append(float(rhs))
+            _, x_diag = sample_gk(key_eval, theta, n_model)
+            lhs, rhs = lhs_rhs_values_gk(
+                x_model=x_diag,
+                y_target=y_obs_full,
+                ell_t=ell_t,
+                ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
+            )
+            lhs_history.append(float(lhs))
+            rhs_history.append(float(rhs))
             # lhs_history.append(np.nan)
             # rhs_history.append(np.nan)
 
         if (t % print_every == 0) or (t == n_steps_pgd - 1):
             # Optional diagnostics, disabled for fairer runtime comparisons:
-            # theta = phi_to_theta(phi)
-            # _, x_diag = sample_gk(key_eval, theta, n_model)
-            # lhs, rhs = lhs_rhs_values_gk(
-            #     x_model=x_diag,
-            #     y_target=y_obs_full,
-            #     ell_t=ell_t,
-            #     ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
-            # )
-            # ratio = float(lhs) / float(rhs) if float(rhs) != 0.0 else np.inf
+            theta = phi_to_theta(phi)
+            _, x_diag = sample_gk(key_eval, theta, n_model)
+            lhs, rhs = lhs_rhs_values_gk(
+                x_model=x_diag,
+                y_target=y_obs_full,
+                ell_t=ell_t,
+                ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
+            )
+            ratio = float(lhs) / float(rhs) if float(rhs) != 0.0 else np.inf
             if last_eval_loss is None:
                 theta = phi_to_theta(phi)
                 last_eval_loss = eval_loss_full(
@@ -600,8 +618,8 @@ def run_adaptive_pgd(
                 f"gamma={float(gamma_t):.6f} | lambda={float(lambda_t):.6f} | "
                 f"train_loss={float(train_loss):.8f} | "
                 f"eval_loss={float(last_eval_loss):.8f}"
-                # f" | lhs={float(lhs):.6e} | rhs={float(rhs):.6e} | "
-                # f"lhs/rhs={ratio:.6e}"
+                f" | lhs={float(lhs):.6e} | rhs={float(rhs):.6e} | "
+                f"lhs/rhs={ratio:.6e}"
             )
 
     return {
@@ -638,6 +656,8 @@ def run_baseline_and_adaptive(
     gamma_sgd=0.01,
     gamma_natural_sgd=0.01,
     gamma_pgd0=0.49,
+    pgd_step_size_mode="fixed",
+    pgd_step_growth_exponent=0.99,
     lambda_scale=1e-3,
     natural_damping=1e-3,
     n_eval_model=2000,
@@ -776,6 +796,8 @@ def run_baseline_and_adaptive(
         n_model=n_model,
         n_steps_pgd=n_steps_pgd,
         gamma_pgd0=gamma_pgd0,
+        pgd_step_size_mode=pgd_step_size_mode,
+        pgd_step_growth_exponent=pgd_step_growth_exponent,
         lambda_scale=lambda_scale,
         ell0=ell0,
         ell_min=ell_min,
@@ -815,6 +837,8 @@ def run_baseline_and_adaptive(
             n_model=n_model,
             n_steps_pgd=n_steps_pgd,
             gamma_pgd0=gamma_pgd0,
+            pgd_step_size_mode=pgd_step_size_mode,
+            pgd_step_growth_exponent=pgd_step_growth_exponent,
             lambda_scale=lambda_scale,
             ell0=ell0,
             ell_min=ell_min,
@@ -882,7 +906,16 @@ def _format_value_for_filename(value):
 
 def _resolve_theta0_for_seed(seed, seed_index, theta0, theta0_by_seed):
     if theta0_by_seed is None:
-        return theta0
+        if theta0 is None:
+            return None
+        theta0_array = np.asarray(theta0, dtype=np.float64)
+        if theta0_array.ndim == 1:
+            return theta0_array
+        if theta0_array.ndim != 2:
+            raise ValueError("theta0 must be a 1D vector or a 2D array-like of shape (n_seeds, theta_dim).")
+        if seed_index >= theta0_array.shape[0]:
+            raise ValueError("theta0 has fewer rows than the number of seeds.")
+        return theta0_array[seed_index]
 
     if isinstance(theta0_by_seed, dict):
         if seed not in theta0_by_seed:
@@ -911,6 +944,8 @@ def run_grid_over_n_model(
     gamma_sgd=0.01,
     gamma_natural_sgd=0.01,
     gamma_pgd0=0.49,
+    pgd_step_size_mode="fixed",
+    pgd_step_growth_exponent=0.99,
     lambda_scale=1e-3,
     natural_damping=1e-3,
     n_eval_model=2000,
@@ -928,11 +963,20 @@ def run_grid_over_n_model(
     output_dir.mkdir(parents=True, exist_ok=True)
     seeds = list(seeds)
 
-    theta0_value = (
-        np.array([2.0, 2.0, 1.5, -0.3], dtype=np.float64)
-        if theta0 is None
-        else np.array(theta0, dtype=np.float64)
-    )
+    if theta0 is not None:
+        theta0_value = np.array(theta0, dtype=np.float64)
+    elif theta0_by_seed is not None:
+        theta0_value = np.asarray(
+            _resolve_theta0_for_seed(
+                seed=seeds[0],
+                seed_index=0,
+                theta0=None,
+                theta0_by_seed=theta0_by_seed,
+            ),
+            dtype=np.float64,
+        )
+    else:
+        theta0_value = np.array([2.0, 2.0, 1.5, -0.3], dtype=np.float64)
     if theta0_value.ndim > 1:
         theta0_value = np.asarray(theta0_value[0], dtype=np.float64)
     theta0_tag = _format_theta_for_filename(theta0_value)
@@ -967,6 +1011,8 @@ def run_grid_over_n_model(
                     gamma_sgd=gamma_sgd,
                     gamma_natural_sgd=gamma_natural_sgd,
                     gamma_pgd0=gamma_pgd0,
+                    pgd_step_size_mode=pgd_step_size_mode,
+                    pgd_step_growth_exponent=pgd_step_growth_exponent,
                     lambda_scale=lambda_scale,
                     natural_damping=natural_damping,
                     n_eval_model=n_eval_model,
@@ -1011,6 +1057,10 @@ def run_grid_over_n_model(
             "gamma_sgd": np.array(gamma_sgd, dtype=np.float64),
             "gamma_natural_sgd": np.array(gamma_natural_sgd, dtype=np.float64),
             "gamma_pgd0": np.array(gamma_pgd0, dtype=np.float64),
+            "pgd_step_size_mode": np.array(pgd_step_size_mode),
+            "pgd_step_growth_exponent": np.array(
+                pgd_step_growth_exponent, dtype=np.float64
+            ),
             "lambda_scale": np.array(lambda_scale, dtype=np.float64),
             "natural_damping": np.array(natural_damping, dtype=np.float64),
             "n_eval_model": np.array(n_eval_model, dtype=np.int32),
@@ -1300,6 +1350,8 @@ def run_for_n_model(
     gamma_sgd=0.01,
     gamma_natural_sgd=0.01,
     gamma_pgd0=0.49,
+    pgd_step_size_mode="fixed",
+    pgd_step_growth_exponent=0.99,
     lambda_scale=1e-3,
     natural_damping=1e-3,
     n_eval_model=2000,
@@ -1327,6 +1379,8 @@ def run_for_n_model(
         gamma_sgd=gamma_sgd,
         gamma_natural_sgd=gamma_natural_sgd,
         gamma_pgd0=gamma_pgd0,
+        pgd_step_size_mode=pgd_step_size_mode,
+        pgd_step_growth_exponent=pgd_step_growth_exponent,
         lambda_scale=lambda_scale,
         natural_damping=natural_damping,
         n_eval_model=n_eval_model,
@@ -1722,7 +1776,7 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "observation_model_grid"
+    experiment_mode = "single_run"
 
     # single_run_theta0_by_seed = np.array(
     #     [
@@ -1736,14 +1790,16 @@ if __name__ == "__main__":
     # )
     single_run_kwargs = dict(
         theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-        theta0_by_seed=np.tile(np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64), (10, 1)),
+        theta0=np.tile(np.array([2.0, 2.0, 1.3, -0.6], dtype=np.float64), (10, 1)),
         n_obs_full=1000,
         target_batch_size=600,
-        n_steps_sgd=3000,
+        n_steps_sgd=1,
         n_steps_pgd=3000,
         gamma_sgd=0.1,
         gamma_natural_sgd=0.1,
-        gamma_pgd0=0.1,
+        gamma_pgd0=0.1, #1.0
+        pgd_step_size_mode="adaptive_decay",
+        pgd_step_growth_exponent=0.01, #0.6
         lambda_scale=1e-3,
         natural_damping=1e-3,
         n_eval_model=2000,
@@ -1751,8 +1807,8 @@ if __name__ == "__main__":
         ell0=10.0,
         ell_min=2.0,
         decay=0.99,
-        run_adaptive_sgd=True,
-        run_fixed_pgd=True,
+        run_adaptive_sgd=False,
+        run_fixed_pgd=False,
     )
     ablation_kwargs = dict(
         theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
@@ -1778,6 +1834,8 @@ if __name__ == "__main__":
         gamma_sgd=0.1,
         gamma_natural_sgd=0.1,
         gamma_pgd0=0.1,
+        pgd_step_size_mode="adaptive_decay",
+        pgd_step_growth_exponent=0.99,
         lambda_scale=1e-3,
         natural_damping=1e-3,
         n_eval_model=2000,
@@ -1800,7 +1858,7 @@ if __name__ == "__main__":
         result = run_for_n_model(
             n_model=600,
             seeds=range(10),
-            output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL/results/gnk",
+            output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL/results/gnk/adaptive_step",
             **single_run_kwargs,
         )
 

@@ -124,7 +124,13 @@ def witness_gradient(x, means, covs, weights, ell):
 # ============================================================
 # 3. Lengthscale schedules
 # ============================================================
-def make_ell_schedule(n_steps, mode, ell0, ell_min, decay):
+def make_ell_schedule(
+    n_steps,
+    mode,
+    ell0,
+    ell_min,
+    decay,
+):
     ts = jnp.arange(n_steps, dtype=jnp.float64)
 
     if mode == "fixed":
@@ -132,6 +138,22 @@ def make_ell_schedule(n_steps, mode, ell0, ell_min, decay):
     if mode == "adaptive":
         return jnp.maximum(ell_min, ell0 * (decay ** ts))
     raise ValueError("mode must be 'fixed' or 'adaptive'")
+
+
+def make_step_size_schedule(
+    n_steps,
+    mode,
+    step_size,
+    growth_exponent=0.99,
+):
+    ts = jnp.arange(n_steps, dtype=jnp.float64)
+
+    if mode == "fixed":
+        return jnp.full((n_steps,), step_size, dtype=jnp.float64)
+    if mode == "adaptive_decay":
+        ts_one_indexed = ts + 1.0
+        return step_size / (ts_one_indexed**growth_exponent)
+    raise ValueError("mode must be 'fixed' or 'adaptive_decay'")
 
 
 # ============================================================
@@ -170,9 +192,10 @@ def run_flow_adaptive(
     weights,
     ell_schedule,
     eval_ell,
-    step_size=0.01,
+    step_size_schedule,
 ):
-    def one_step(x, ell):
+    def one_step(x, inputs):
+        ell, step_size = inputs
         x_new = mmd_gf_one_step(
             x=x,
             means=means,
@@ -183,7 +206,7 @@ def run_flow_adaptive(
         )
         return x_new, None
 
-    x_final, _ = lax.scan(one_step, x0, ell_schedule)
+    x_final, _ = lax.scan(one_step, x0, (ell_schedule, step_size_schedule))
     eval_ell = jnp.asarray(eval_ell, dtype=x_final.dtype)
     term_yy = gaussian_mixture_kernel_expectation(means, covs, weights, eval_ell)
     f_final = F_with_precomputed_term_yy(x_final, means, covs, weights, eval_ell, term_yy)
@@ -302,7 +325,7 @@ def run_flow_adaptive_with_lhs_rhs(
     covs,
     weights,
     ell_schedule,
-    step_size,
+    step_size_schedule,
     ell_inf,
     eval_ell,
     checkpoint_steps,
@@ -312,8 +335,9 @@ def run_flow_adaptive_with_lhs_rhs(
     stop_rel_tol=None,
     stop_patience=3,
 ):
-    def run_segment(x, ell_segment):
-        def one_step(x_inner, ell):
+    def run_segment(x, ell_segment, step_size_segment):
+        def one_step(x_inner, inputs):
+            ell, step_size = inputs
             x_new = mmd_gf_one_step(
                 x=x_inner,
                 means=means,
@@ -324,7 +348,7 @@ def run_flow_adaptive_with_lhs_rhs(
             )
             return x_new, None
 
-        x_final, _ = lax.scan(one_step, x, ell_segment)
+        x_final, _ = lax.scan(one_step, x, (ell_segment, step_size_segment))
         return x_final
 
     n_steps = int(ell_schedule.shape[0])
@@ -349,8 +373,13 @@ def run_flow_adaptive_with_lhs_rhs(
     stopped_early = False
 
     for step in checkpoint_steps:
-        x = run_segment(x, ell_schedule[prev_step:step])
+        x = run_segment(
+            x,
+            ell_schedule[prev_step:step],
+            step_size_schedule[prev_step:step],
+        )
         grad_ell = ell_schedule[step - 1]
+        grad_step_size = step_size_schedule[step - 1]
         f_values.append(float(f_value(x, means, covs, weights, eval_ell, term_yy_eval)))
         f_current = f_values[-1]
         rel_change = None
@@ -375,6 +404,7 @@ def run_flow_adaptive_with_lhs_rhs(
             print(
                 f"step={int(step):d} "
                 f"ell_t={float(grad_ell):.6g} "
+                f"step_size_t={float(grad_step_size):.6g} "
                 f"lhs={lhs_float:.6e} "
                 f"rhs={rhs_float:.6e} "
                 f"lhs/rhs={ratio:.6e}"
@@ -414,7 +444,11 @@ def run_flow_adaptive_with_lhs_rhs(
         prev_f = f_current
 
     if prev_step < n_steps and not stopped_early:
-        x = run_segment(x, ell_schedule[prev_step:n_steps])
+        x = run_segment(
+            x,
+            ell_schedule[prev_step:n_steps],
+            step_size_schedule[prev_step:n_steps],
+        )
 
     f_final = F_with_precomputed_term_yy(x, means, covs, weights, eval_ell, term_yy_eval)
     actual_checkpoint_steps = checkpoint_steps[: len(f_values)]
@@ -448,6 +482,8 @@ def run_experiments(
     adapt_stop_rel_tol=None,
     adapt_stop_patience=3,
     save_lhs_rhs_histories=False,
+    adapt_step_size_mode="fixed",
+    adapt_step_growth_exponent=0.99,
 ):
     fixed_finals = []
     adapt_finals = []
@@ -488,6 +524,12 @@ def run_experiments(
             ell_min=np.float64(ell_min),
             decay=np.float64(decay),
         )
+        adapt_step_size_schedule = make_step_size_schedule(
+            n_steps=adapt_n_steps,
+            mode=adapt_step_size_mode,
+            step_size=np.float64(adapt_step_size),
+            growth_exponent=np.float64(adapt_step_growth_exponent),
+        )
 
         fixed_t0 = time.perf_counter()
         fixed_particles, fixed_final, fixed_history = run_flow_fixed_with_history(
@@ -521,7 +563,7 @@ def run_experiments(
                 covs=covs_jnp,
                 weights=weights_jnp,
                 ell_schedule=ell_schedule_adapt,
-                step_size=np.float64(adapt_step_size),
+                step_size_schedule=adapt_step_size_schedule,
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
                 checkpoint_steps=adapt_checkpoint_steps,
@@ -547,7 +589,7 @@ def run_experiments(
                 covs=covs_jnp,
                 weights=weights_jnp,
                 ell_schedule=ell_schedule_adapt,
-                step_size=np.float64(adapt_step_size),
+                step_size_schedule=adapt_step_size_schedule,
                 ell_inf=np.float64(ell_min),
                 eval_ell=np.float64(eval_ell),
                 checkpoint_steps=adapt_checkpoint_steps,
@@ -643,6 +685,10 @@ def run_experiments(
         "adapt_history_count": adapt_history_count,
         "fixed_step_size": np.asarray(fixed_step_size, dtype=np.float64),
         "adapt_step_size": np.asarray(adapt_step_size, dtype=np.float64),
+        "adapt_step_size_mode": np.asarray(adapt_step_size_mode),
+        "adapt_step_growth_exponent": np.asarray(
+            adapt_step_growth_exponent, dtype=np.float64
+        ),
         "fixed_n_steps": np.asarray(fixed_n_steps, dtype=np.int64),
         "adapt_n_steps": np.asarray(adapt_n_steps, dtype=np.int64),
         "fixed_stop_rel_tol": np.asarray(np.nan if fixed_stop_rel_tol is None else fixed_stop_rel_tol, dtype=np.float64),
@@ -710,20 +756,22 @@ if __name__ == "__main__":
     results = run_experiments(
         num_seeds=10,
         n_particles=10,
-        fixed_n_steps=100000, 
-        adapt_n_steps=70000,
+        fixed_n_steps=1, 
+        adapt_n_steps=45000,
         fixed_step_size=1.1,
-        adapt_step_size=0.01,
+        adapt_step_size=1.0,
         ell_fixed=0.1,
         ell0=10.0,
         ell_min=0.1,
         decay=0.9999,
+        adapt_step_size_mode="adaptive_decay",
+        adapt_step_growth_exponent=0.1,
         eval_ell=0.1,
         print_lhs_rhs=True,
         print_mean_history=True,
-        adapt_stop_rel_tol=1e-15,
+        adapt_stop_rel_tol=None,
         adapt_stop_patience=3,
-        save_lhs_rhs_histories=False,
+        save_lhs_rhs_histories=True,
     )
 
     save_results(results, results_path)

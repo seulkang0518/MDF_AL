@@ -171,6 +171,16 @@ def make_adaptive_ell_schedule(n_steps, ell0, ell_min, decay):
     return np.maximum(ell_min, ell0 * (decay**ts))
 
 
+def make_pgd_step_size_schedule(n_steps, mode, gamma0, growth_exponent=0.99):
+    ts = np.arange(n_steps, dtype=np.float64)
+
+    if mode == "fixed":
+        return np.full((n_steps,), gamma0, dtype=np.float64)
+    if mode == "adaptive_decay":
+        return gamma0 / ((ts + 1.0) ** growth_exponent)
+    raise ValueError("mode must be 'fixed' or 'adaptive_decay'")
+
+
 # ============================================================
 # 3. One-step optimizers
 # ============================================================
@@ -449,6 +459,8 @@ def run_pgd(
     target_batch_size=100,
     n_steps=500,
     gamma=1e-2,
+    pgd_step_size_mode="fixed",
+    pgd_step_growth_exponent=0.99,
     lambda_scale=1e-3,
     ell0=100.0,
     ell_min=30.0,
@@ -473,6 +485,12 @@ def run_pgd(
         ell_schedule = np.asarray(ell_schedule, dtype=np.float64)
         if ell_schedule.shape[0] != n_steps:
             raise ValueError("ell_schedule must have length n_steps.")
+    gamma_schedule = make_pgd_step_size_schedule(
+        n_steps=n_steps,
+        mode=pgd_step_size_mode,
+        gamma0=gamma,
+        growth_exponent=pgd_step_growth_exponent,
+    )
     checkpoint_steps = _normalize_checkpoint_steps(checkpoint_steps, n_steps)
     checkpoint_step_set = set(np.asarray(checkpoint_steps, dtype=np.int32).tolist())
     theta_history = []
@@ -493,7 +511,7 @@ def run_pgd(
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
         y_batch = _sample_target_batch(key_batch, y_obs_full, target_batch_size)
         ell_t = float(ell_schedule[t])
-        gamma_t = jnp.asarray(gamma, dtype=jnp.float64)
+        gamma_t = jnp.asarray(gamma_schedule[t], dtype=jnp.float64)
         lambda_t = jnp.asarray(lambda_scale, dtype=jnp.float64)
         phi, train_loss, direction, theta_delta = pgd_step_phi(
             phi,
@@ -744,6 +762,8 @@ def run_one_seed(
     ell_fixed=30.0,
     ell_eval=30.0,
     pgd_gamma=1e-2,
+    pgd_step_size_mode="fixed",
+    pgd_step_growth_exponent=0.99,
     pgd_lambda_scale=1e-3,
     pgd_ell0=100.0,
     pgd_ell_min=30.0,
@@ -924,6 +944,8 @@ def run_one_seed(
         target_batch_size=target_batch_size,
         n_steps=pgd_n_steps,
         gamma=pgd_gamma,
+        pgd_step_size_mode=pgd_step_size_mode,
+        pgd_step_growth_exponent=pgd_step_growth_exponent,
         lambda_scale=pgd_lambda_scale,
         ell0=pgd_ell0,
         ell_min=pgd_ell_min,
@@ -950,6 +972,8 @@ def run_one_seed(
             target_batch_size=target_batch_size,
             n_steps=pgd_n_steps,
             gamma=pgd_gamma,
+            pgd_step_size_mode=pgd_step_size_mode,
+            pgd_step_growth_exponent=pgd_step_growth_exponent,
             lambda_scale=pgd_lambda_scale,
             ell0=pgd_ell0,
             ell_min=pgd_ell_min,
@@ -1123,6 +1147,10 @@ def run_experiment(
             "pgd_ell_min": np.asarray(kwargs.get("pgd_ell_min", 30.0), dtype=np.float64),
             "pgd_decay": np.asarray(kwargs.get("pgd_decay", 0.995), dtype=np.float64),
             "pgd_gamma": np.asarray(kwargs.get("pgd_gamma", 1e-2), dtype=np.float64),
+            "pgd_step_growth_exponent": np.asarray(
+                kwargs.get("pgd_step_growth_exponent", 0.99),
+                dtype=np.float64,
+            ),
             "natural_sgd_gamma": np.asarray(
                 kwargs.get("natural_sgd_gamma", kwargs.get("sgd_gamma", 1e-2)),
                 dtype=np.float64,
@@ -1134,6 +1162,7 @@ def run_experiment(
             "scale_eps": np.asarray(kwargs.get("scale_eps", 1e-6), dtype=np.float64),
             "kernel_diag_max_pairs": np.asarray(kwargs.get("kernel_diag_max_pairs", 20000), dtype=np.int32),
             "print_kernel_diagnostics": np.asarray(kwargs.get("print_kernel_diagnostics", False), dtype=np.bool_),
+            "pgd_step_size_mode": np.asarray(kwargs.get("pgd_step_size_mode", "fixed")),
             "run_natural_sgd": np.asarray(kwargs.get("run_natural_sgd", False), dtype=np.bool_),
             "run_adaptive_sgd": np.asarray(kwargs.get("run_adaptive_sgd", False), dtype=np.bool_),
             "run_fixed_pgd": np.asarray(kwargs.get("run_fixed_pgd", False), dtype=np.bool_),
@@ -1542,13 +1571,13 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "regularization_ablation"
+    experiment_mode = "single_run"
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
     sgd_n_steps = 12000
     pgd_n_steps = 12000
-    single_run_theta0_by_seed = np.tile(np.array([90.0, 90.0], dtype=np.float64), (10, 1))
+    single_run_theta0_by_seed = np.tile(np.array([60.0, 60.0], dtype=np.float64), (10, 1))
     # single_run_theta0_by_seed = np.array(
     #         [
     #             [60.0, 60.0],
@@ -1560,7 +1589,7 @@ if __name__ == "__main__":
     #         dtype=np.float64,
     #     )
     single_run_kwargs = dict(
-        corruption=0.0,
+        corruption=0.35,
         num_steps=50,
         standardize=False,
         ell_fixed=30,
@@ -1568,13 +1597,15 @@ if __name__ == "__main__":
         pgd_ell0=3000,
         pgd_ell_min=30,
         pgd_decay=0.9995,
-        run_plain_sgd=True,
-        run_natural_sgd=True,
+        run_plain_sgd=False,
+        run_natural_sgd=False,
         run_adaptive_sgd=False,
         run_fixed_pgd=False,
         sgd_gamma=100,
         natural_sgd_gamma=100,
         pgd_gamma=300,
+        pgd_step_size_mode="adaptive_decay",
+        pgd_step_growth_exponent=0.01,
         pgd_lambda_scale=1e-3,
         natural_damping=1e-3,
         print_kernel_diagnostics=True,
@@ -1629,7 +1660,7 @@ if __name__ == "__main__":
     if experiment_mode == "single_run":
         result = run_experiment(
             seeds=range(10),
-            output_path="results/lv/lotka_volterra_results_90_90.npz",
+            output_path="results/lv/adaptive_step/lotka_volterra_results_60_60_c35.npz",
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,
