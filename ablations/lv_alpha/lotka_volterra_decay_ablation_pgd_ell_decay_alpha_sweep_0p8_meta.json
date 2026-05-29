@@ -80,8 +80,8 @@
   "pgd_ell0": 3000.0,
   "pgd_ell_min": 30.0,
   "pgd_decay": 0.9995,
-  "pgd_ell_schedule_mode": "exponential",
-  "pgd_ell_decay_alpha": 1.0,
+  "pgd_ell_schedule_mode": "polynomial",
+  "pgd_ell_decay_alpha": 0.8,
   "pgd_gamma": 300.0,
   "pgd_step_growth_exponent": 0.01,
   "natural_sgd_gamma": 100.0,
@@ -100,5 +100,5 @@
     12000
   ],
   "uses_theta0_by_seed": true,
-  "result_file": "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_0p9995.npz"
+  "result_file": "ablations/lv_alpha/lotka_volterra_decay_ablation_pgd_ell_decay_alpha_sweep_0p8.npz"
 }

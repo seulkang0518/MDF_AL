@@ -2093,8 +2093,8 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "decay_ablation"
-    ell_schedule_mode = "exponential"
+    experiment_mode = "alpha_ablation"
+    ell_schedule_mode = "polynomial"
 
     single_run_theta0_by_seed = np.array(
         [
@@ -2177,6 +2177,7 @@ if __name__ == "__main__":
     secondary_lengthscale_grid_param = "ell0"
     secondary_lengthscale_grid_values = [2.0, 5.0, 10.0, 20.0]
     decay_sweep_values = [0.5, 0.8, 0.9, 0.95, 0.99]
+    alpha_sweep_values = [0.01, 0.1, 0.2, 0.3, 0.5, 1.0]
 
     if experiment_mode == "single_run":
         result = run_for_n_model(
@@ -2215,6 +2216,19 @@ if __name__ == "__main__":
             output_dir="ablations/gk_decay",
             decay_values=decay_sweep_values,
             sweep_param="decay",
+            **ablation_kwargs,
+        )
+
+        print("\nSaved decay ablation")
+        print(f"summary={result['summary_path']}")
+    
+    elif experiment_mode == "alpha_ablation":
+        result = run_decay_ablation_for_n_model(
+            n_model=600,
+            seeds=range(10),
+            output_dir="ablations/gk_alpha",
+            decay_values=alpha_sweep_values,
+            sweep_param="ell_decay_alpha",
             **ablation_kwargs,
         )
 

@@ -1718,14 +1718,14 @@ if __name__ == "__main__":
             [
                 [60.0, 60.0],
                 [90.0, 90.0],
-                [75.0, 75.0],
-                [50.0, 60.0],
-                [50.0, 50.0],
                 [60.0, 60.0],
                 [90.0, 90.0],
-                [75.0, 75.0],
-                [50.0, 60.0],
-                [50.0, 50.0],
+                [60.0, 60.0],
+                [90.0, 90.0],
+                [60.0, 60.0],
+                [90.0, 90.0],
+                [60.0, 60.0],
+                [90.0, 90.0],
             ],
             dtype=np.float64,
         ),
@@ -1761,6 +1761,7 @@ if __name__ == "__main__":
     secondary_lengthscale_grid_param = "pgd_ell0"
     secondary_lengthscale_grid_values = [100.0, 300.0, 1000.0, 3000.0]
     decay_sweep_values = [0.5,0.8, 0.9, 0.95, 0.9995]
+    alpha_sweep_values = [0.4, 0.6, 0.8, 1.0]
 
     if experiment_mode == "single_run":
         result = run_experiment(
@@ -1811,6 +1812,19 @@ if __name__ == "__main__":
             **ablation_kwargs,
         )
         print("Decay ablation summary:", result["summary_path"])
+    
+    elif experiment_mode == "alpha_ablation":
+        result = run_decay_ablation(
+            output_dir="ablations/lv_alpha",
+            decay_values=alpha_sweep_values,
+            sweep_param="pgd_ell_decay_alpha",
+            seeds=range(10),
+            n_steps=max(sgd_n_steps, pgd_n_steps),
+            sgd_n_steps=sgd_n_steps,
+            pgd_n_steps=pgd_n_steps,
+            **ablation_kwargs,
+        )
+        print("Alpha ablation summary:", result["summary_path"])
 
     elif experiment_mode == "observation_model_grid":
         result = run_observation_model_grid(
