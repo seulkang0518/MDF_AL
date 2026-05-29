@@ -3,7 +3,7 @@ from pathlib import Path
 import time
 
 import numpy as np
-from results_io import save_metadata_sidecar
+from results_io import save_selected_metadata_sidecar
 
 import jax
 
@@ -166,9 +166,20 @@ def witness_gradient_empirical(x, y, ell):
     return grad_emp - grad_tar
 
 
-def make_adaptive_ell_schedule(n_steps, ell0, ell_min, decay):
+def make_adaptive_ell_schedule(
+    n_steps,
+    ell0,
+    ell_min,
+    decay,
+    schedule="exponential",
+    alpha=1.0,
+):
     ts = np.arange(n_steps, dtype=np.float64)
-    return np.maximum(ell_min, ell0 * (decay**ts))
+    if schedule == "exponential":
+        return np.maximum(ell_min, ell0 * (decay**ts))
+    if schedule == "polynomial":
+        return np.maximum(ell_min, ell0 / ((ts + 1.0) ** alpha))
+    raise ValueError("schedule must be 'exponential' or 'polynomial'")
 
 
 def make_pgd_step_size_schedule(n_steps, mode, gamma0, growth_exponent=0.99):
@@ -465,6 +476,8 @@ def run_pgd(
     ell0=100.0,
     ell_min=30.0,
     decay=0.995,
+    ell_schedule_mode="exponential",
+    ell_decay_alpha=1.0,
     ell_eval=30.0,
     ell_schedule=None,
     num_steps=100,
@@ -480,7 +493,14 @@ def run_pgd(
     phi = theta_to_phi(theta0)
     theta1 = jnp.asarray(theta1, dtype=jnp.float64)
     if ell_schedule is None:
-        ell_schedule = make_adaptive_ell_schedule(n_steps, ell0, ell_min, decay)
+        ell_schedule = make_adaptive_ell_schedule(
+            n_steps,
+            ell0,
+            ell_min,
+            decay,
+            schedule=ell_schedule_mode,
+            alpha=ell_decay_alpha,
+        )
     else:
         ell_schedule = np.asarray(ell_schedule, dtype=np.float64)
         if ell_schedule.shape[0] != n_steps:
@@ -768,6 +788,8 @@ def run_one_seed(
     pgd_ell0=100.0,
     pgd_ell_min=30.0,
     pgd_decay=0.995,
+    pgd_ell_schedule_mode="exponential",
+    pgd_ell_decay_alpha=1.0,
     n_eval_model=200,
     history_every=100,
     checkpoint_steps=(10, 1000, 3000, 12000, 20000),
@@ -858,7 +880,14 @@ def run_one_seed(
         "kernel_diag_cross_q50": np.asarray(cross_q50, dtype=np.float64),
         "kernel_diag_cross_q90": np.asarray(cross_q90, dtype=np.float64),
     }
-    adaptive_ell_schedule_sgd = make_adaptive_ell_schedule(sgd_n_steps, pgd_ell0, pgd_ell_min, pgd_decay)
+    adaptive_ell_schedule_sgd = make_adaptive_ell_schedule(
+        sgd_n_steps,
+        pgd_ell0,
+        pgd_ell_min,
+        pgd_decay,
+        schedule=pgd_ell_schedule_mode,
+        alpha=pgd_ell_decay_alpha,
+    )
     fixed_ell_schedule_pgd = np.full((pgd_n_steps,), pgd_ell_min, dtype=np.float64)
 
     if run_plain_sgd:
@@ -950,6 +979,8 @@ def run_one_seed(
         ell0=pgd_ell0,
         ell_min=pgd_ell_min,
         decay=pgd_decay,
+        ell_schedule_mode=pgd_ell_schedule_mode,
+        ell_decay_alpha=pgd_ell_decay_alpha,
         ell_eval=ell_eval,
         num_steps=num_steps,
         T=T,
@@ -978,6 +1009,8 @@ def run_one_seed(
             ell0=pgd_ell0,
             ell_min=pgd_ell_min,
             decay=pgd_decay,
+            ell_schedule_mode=pgd_ell_schedule_mode,
+            ell_decay_alpha=pgd_ell_decay_alpha,
             ell_eval=ell_eval,
             ell_schedule=fixed_ell_schedule_pgd,
             num_steps=num_steps,
@@ -1146,6 +1179,12 @@ def run_experiment(
             "pgd_ell0": np.asarray(kwargs.get("pgd_ell0", 100.0), dtype=np.float64),
             "pgd_ell_min": np.asarray(kwargs.get("pgd_ell_min", 30.0), dtype=np.float64),
             "pgd_decay": np.asarray(kwargs.get("pgd_decay", 0.995), dtype=np.float64),
+            "pgd_ell_schedule_mode": np.asarray(
+                kwargs.get("pgd_ell_schedule_mode", "exponential")
+            ),
+            "pgd_ell_decay_alpha": np.asarray(
+                kwargs.get("pgd_ell_decay_alpha", 1.0), dtype=np.float64
+            ),
             "pgd_gamma": np.asarray(kwargs.get("pgd_gamma", 1e-2), dtype=np.float64),
             "pgd_step_growth_exponent": np.asarray(
                 kwargs.get("pgd_step_growth_exponent", 0.99),
@@ -1558,11 +1597,69 @@ def run_lengthscale_regularization_grid(
     return summary
 
 
+HYPERPARAMETER_METADATA_KEYS = {
+    "seeds",
+    "theta_true",
+    "theta_bad",
+    "theta0",
+    "theta0_per_seed",
+    "corruption",
+    "standardize",
+    "scale_eps",
+    "m_obs",
+    "n_model",
+    "n_steps",
+    "sgd_n_steps",
+    "pgd_n_steps",
+    "num_steps",
+    "T",
+    "ell_fixed",
+    "ell_eval",
+    "sgd_gamma",
+    "natural_sgd_gamma",
+    "natural_damping",
+    "pgd_ell0",
+    "pgd_ell_min",
+    "pgd_decay",
+    "pgd_ell_schedule_mode",
+    "pgd_ell_decay_alpha",
+    "pgd_gamma",
+    "pgd_lambda_scale",
+    "pgd_step_size_mode",
+    "pgd_step_growth_exponent",
+    "history_every",
+    "checkpoint_steps",
+    "run_plain_sgd",
+    "run_natural_sgd",
+    "run_adaptive_sgd",
+    "run_fixed_pgd",
+    "print_kernel_diagnostics",
+    "kernel_diag_max_pairs",
+    "uses_theta0_by_seed",
+    "sweep_name",
+    "sweep_param",
+    "sweep_values",
+    "grid_name",
+    "m_obs_values",
+    "n_model_values",
+    "tie_target_batch_to_m_obs",
+    "lengthscale_param",
+    "lengthscale_values",
+    "secondary_lengthscale_param",
+    "secondary_lengthscale_values",
+    "lambda_scales",
+}
+
+
 def save_results(results, output_path):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(output_path, **results)
-    save_metadata_sidecar(results, output_path)
+    save_selected_metadata_sidecar(
+        results,
+        output_path,
+        allowed_keys=HYPERPARAMETER_METADATA_KEYS,
+    )
 
 
 def load_results(input_path):
@@ -1571,25 +1668,27 @@ def load_results(input_path):
 
 
 if __name__ == "__main__":
-    experiment_mode = "single_run"
+    experiment_mode = "decay_ablation"
+    pgd_ell_schedule_mode = "exponential"
+    pgd_ell_decay_alpha = 1.0
 
     # SGD MMD uses a fixed RBF lengthscale.
     # PGD starts from pgd_ell0 and decays down to pgd_ell_min.
     sgd_n_steps = 12000
     pgd_n_steps = 12000
-    single_run_theta0_by_seed = np.tile(np.array([60.0, 60.0], dtype=np.float64), (10, 1))
-    # single_run_theta0_by_seed = np.array(
-    #         [
-    #             [60.0, 60.0],
-    #             [90.0, 90.0],
-    #             [75.0, 75.0],
-    #             [70.0, 60.0],
-    #             [50.0, 60.0],
-    #         ],
-    #         dtype=np.float64,
-    #     )
+    # single_run_theta0_by_seed = np.tile(np.array([60.0, 60.0], dtype=np.float64), (10, 1))
+    single_run_theta0_by_seed = np.array(
+            [
+                [60.0, 60.0],
+                [90.0, 90.0],
+                [75.0, 75.0],
+                [70.0, 60.0],
+                [50.0, 60.0],
+            ],
+            dtype=np.float64,
+        )
     single_run_kwargs = dict(
-        corruption=0.35,
+        corruption=0.0,
         num_steps=50,
         standardize=False,
         ell_fixed=30,
@@ -1597,10 +1696,12 @@ if __name__ == "__main__":
         pgd_ell0=3000,
         pgd_ell_min=30,
         pgd_decay=0.9995,
-        run_plain_sgd=False,
-        run_natural_sgd=False,
-        run_adaptive_sgd=False,
-        run_fixed_pgd=False,
+        pgd_ell_schedule_mode=pgd_ell_schedule_mode,
+        pgd_ell_decay_alpha=pgd_ell_decay_alpha,
+        run_plain_sgd=True,
+        run_natural_sgd=True,
+        run_adaptive_sgd=True,
+        run_fixed_pgd=True,
         sgd_gamma=100,
         natural_sgd_gamma=100,
         pgd_gamma=300,
@@ -1636,6 +1737,10 @@ if __name__ == "__main__":
         pgd_ell0=3000,
         pgd_ell_min=30,
         pgd_decay=0.9995,
+        pgd_ell_schedule_mode=pgd_ell_schedule_mode,
+        pgd_ell_decay_alpha=pgd_ell_decay_alpha,
+        pgd_step_size_mode="adaptive_decay",
+        pgd_step_growth_exponent=0.01,
         run_plain_sgd=False,
         run_natural_sgd=False,
         run_adaptive_sgd=False,
@@ -1659,8 +1764,8 @@ if __name__ == "__main__":
 
     if experiment_mode == "single_run":
         result = run_experiment(
-            seeds=range(10),
-            output_path="results/lv/adaptive_step/lotka_volterra_results_60_60_c35.npz",
+            seeds=range(5),
+            output_path="cross_method/lv/lotka_volterra_results_pgd_vs_sgd.npz",
             n_steps=max(sgd_n_steps, pgd_n_steps),
             sgd_n_steps=sgd_n_steps,
             pgd_n_steps=pgd_n_steps,

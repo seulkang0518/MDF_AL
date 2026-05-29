@@ -9,14 +9,6 @@
     10.0,
     100.0
   ],
-  "output_paths": [
-    "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_0p03/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_0p1/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_0p3/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_1/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_10/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_100/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
-  ],
   "n_model": 600,
   "seeds": [
     0,
@@ -29,14 +21,6 @@
     7,
     8,
     9
-  ],
-  "adaptive_eval_means": [
-    5.071504623127915e-05,
-    3.138399696965976e-05,
-    4.3753737087102724e-05,
-    0.00010869266676168747,
-    0.01777301065629796,
-    0.9930442761670077
   ],
   "result_file": "ablations/gk_gamma/g_and_k_step_size_ablation_gamma_pgd0_sweep_summary.npz"
 }

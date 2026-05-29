@@ -8,13 +8,6 @@
     0.95,
     0.9995
   ],
-  "output_paths": [
-    "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_0p5.npz",
-    "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_0p8.npz",
-    "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_0p9.npz",
-    "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_0p95.npz",
-    "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_0p9995.npz"
-  ],
   "seeds": [
     0,
     1,
@@ -26,20 +19,6 @@
     7,
     8,
     9
-  ],
-  "pgd_eval_means": [
-    0.08724449286534366,
-    0.08723073026145708,
-    0.08721039776839472,
-    0.08716041801957708,
-    0.010028352846318886
-  ],
-  "pgd_eval_stds": [
-    0.0934478263115459,
-    0.09343146607529697,
-    0.09340677172688562,
-    0.09334401507976518,
-    0.003956422755454549
   ],
   "result_file": "ablations/lv_decay/lotka_volterra_decay_ablation_pgd_decay_sweep_summary.npz"
 }

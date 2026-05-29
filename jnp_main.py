@@ -2,7 +2,7 @@ import os
 os.environ["JAX_PLATFORMS"] = "cpu"
 import numpy as np
 import time
-from results_io import save_metadata_sidecar
+from results_io import save_selected_metadata_sidecar
 
 import jax
 jax.config.update("jax_enable_x64", True)
@@ -33,6 +33,31 @@ covs = np.array(
 )
 
 weights = np.ones(k, dtype=np.float64) / k
+
+
+HYPERPARAMETER_METADATA_KEYS = {
+    "seeds",
+    "num_seeds",
+    "n_particles",
+    "fixed_n_steps",
+    "adapt_n_steps",
+    "fixed_step_size",
+    "adapt_step_size",
+    "ell_fixed",
+    "ell0",
+    "ell_min",
+    "eval_ell",
+    "ell_schedule",
+    "ell_decay_alpha",
+    "decay",
+    "adapt_step_size_mode",
+    "adapt_step_growth_exponent",
+    "fixed_stop_rel_tol",
+    "adapt_stop_rel_tol",
+    "save_lhs_rhs_histories",
+    "print_lhs_rhs",
+    "print_mean_history",
+}
 
 
 # ============================================================
@@ -130,13 +155,20 @@ def make_ell_schedule(
     ell0,
     ell_min,
     decay,
+    schedule="exponential",
+    alpha=1.0,
 ):
     ts = jnp.arange(n_steps, dtype=jnp.float64)
 
     if mode == "fixed":
         return jnp.full((n_steps,), ell0, dtype=jnp.float64)
     if mode == "adaptive":
-        return jnp.maximum(ell_min, ell0 * (decay ** ts))
+        ts_one_indexed = ts + 1.0
+        if schedule == "exponential":
+            return jnp.maximum(ell_min, ell0 * (decay ** ts))
+        if schedule == "polynomial":
+            return jnp.maximum(ell_min, ell0 / (ts_one_indexed**alpha))
+        raise ValueError("schedule must be 'exponential' or 'polynomial'")
     raise ValueError("mode must be 'fixed' or 'adaptive'")
 
 
@@ -473,6 +505,8 @@ def run_experiments(
     ell0,
     ell_min,
     decay,
+    ell_schedule="exponential",
+    ell_decay_alpha=1.0,
     adapt_step_size=0.01,
     eval_ell=1.0,
     print_lhs_rhs=False,
@@ -516,6 +550,8 @@ def run_experiments(
             ell0=np.float64(ell_fixed),
             ell_min=np.float64(ell_min),
             decay=np.float64(decay),
+            schedule=ell_schedule,
+            alpha=np.float64(ell_decay_alpha),
         )
         ell_schedule_adapt = make_ell_schedule(
             n_steps=adapt_n_steps,
@@ -523,6 +559,8 @@ def run_experiments(
             ell0=np.float64(ell0),
             ell_min=np.float64(ell_min),
             decay=np.float64(decay),
+            schedule=ell_schedule,
+            alpha=np.float64(ell_decay_alpha),
         )
         adapt_step_size_schedule = make_step_size_schedule(
             n_steps=adapt_n_steps,
@@ -648,6 +686,8 @@ def run_experiments(
 
     results = {
         "seeds": np.arange(num_seeds, dtype=np.int64),
+        "num_seeds": np.asarray(num_seeds, dtype=np.int64),
+        "n_particles": np.asarray(n_particles, dtype=np.int64),
         "fixed_finals": fixed_finals,
         "adapt_finals": adapt_finals,
         "fixed_mean": float(np.mean(fixed_finals)),
@@ -685,6 +725,13 @@ def run_experiments(
         "adapt_history_count": adapt_history_count,
         "fixed_step_size": np.asarray(fixed_step_size, dtype=np.float64),
         "adapt_step_size": np.asarray(adapt_step_size, dtype=np.float64),
+        "ell_fixed": np.asarray(ell_fixed, dtype=np.float64),
+        "ell0": np.asarray(ell0, dtype=np.float64),
+        "ell_min": np.asarray(ell_min, dtype=np.float64),
+        "eval_ell": np.asarray(eval_ell, dtype=np.float64),
+        "ell_schedule": np.asarray(ell_schedule),
+        "ell_decay_alpha": np.asarray(ell_decay_alpha, dtype=np.float64),
+        "decay": np.asarray(decay, dtype=np.float64),
         "adapt_step_size_mode": np.asarray(adapt_step_size_mode),
         "adapt_step_growth_exponent": np.asarray(
             adapt_step_growth_exponent, dtype=np.float64
@@ -694,6 +741,8 @@ def run_experiments(
         "fixed_stop_rel_tol": np.asarray(np.nan if fixed_stop_rel_tol is None else fixed_stop_rel_tol, dtype=np.float64),
         "adapt_stop_rel_tol": np.asarray(np.nan if adapt_stop_rel_tol is None else adapt_stop_rel_tol, dtype=np.float64),
         "save_lhs_rhs_histories": np.asarray(save_lhs_rhs_histories, dtype=np.bool_),
+        "print_lhs_rhs": np.asarray(print_lhs_rhs, dtype=np.bool_),
+        "print_mean_history": np.asarray(print_mean_history, dtype=np.bool_),
     }
 
     if save_lhs_rhs_histories:
@@ -741,7 +790,11 @@ def run_experiments(
 
 def save_results(results, output_path):
     np.savez_compressed(output_path, **results)
-    save_metadata_sidecar(results, output_path)
+    save_selected_metadata_sidecar(
+        results,
+        output_path,
+        allowed_keys=HYPERPARAMETER_METADATA_KEYS,
+    )
 
 
 def load_results(input_path):
@@ -752,20 +805,23 @@ def load_results(input_path):
 if __name__ == "__main__":
 
     results_path = "results_n10f.npz"
+    ell_schedule = "exponential"
 
     results = run_experiments(
         num_seeds=10,
         n_particles=10,
-        fixed_n_steps=1, 
+        fixed_n_steps=50000, 
         adapt_n_steps=45000,
         fixed_step_size=1.1,
-        adapt_step_size=1.0,
+        adapt_step_size=0.01,
         ell_fixed=0.1,
         ell0=10.0,
         ell_min=0.1,
         decay=0.9999,
+        ell_schedule=ell_schedule,
+        ell_decay_alpha=0.4,
         adapt_step_size_mode="adaptive_decay",
-        adapt_step_growth_exponent=0.1,
+        adapt_step_growth_exponent=0.01,
         eval_ell=0.1,
         print_lhs_rhs=True,
         print_mean_history=True,

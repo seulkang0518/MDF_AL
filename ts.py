@@ -460,7 +460,7 @@ def parse_args():
     parser.add_argument("--iterations", type=int, default=1000)
     parser.add_argument("--n-inits", type=int, default=1)
     parser.add_argument("--n-opt", type=int, default=1)
-    parser.add_argument("--learning-rate", type=float, default=0.2) #0.2
+    parser.add_argument("--learning-rate", type=float, default=0.0) #0.2
     parser.add_argument("--ridge", type=float, default=1e-3)
     parser.add_argument("--ell-initial", type=float, default=1000.0)
     parser.add_argument("--ell-final", type=float, default=80.0)

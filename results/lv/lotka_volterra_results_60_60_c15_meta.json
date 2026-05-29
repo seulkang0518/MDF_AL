@@ -1,0 +1,70 @@
+{
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "theta_true": [
+    100.0,
+    120.0
+  ],
+  "theta_bad": [
+    50.0,
+    50.0
+  ],
+  "theta0": [
+    60.0,
+    60.0
+  ],
+  "corruption": 0.15,
+  "standardize": false,
+  "scale_mean": [
+    0.0,
+    0.0
+  ],
+  "scale_std": [
+    1.0,
+    1.0
+  ],
+  "m_obs": 100,
+  "n_model": 50,
+  "n_steps": 12000,
+  "sgd_n_steps": 12000,
+  "pgd_n_steps": 12000,
+  "num_steps": 50,
+  "T": 1.0,
+  "ell_fixed": 30.0,
+  "ell_eval": 30.0,
+  "sgd_gamma": 100.0,
+  "pgd_ell0": 3000.0,
+  "pgd_ell_min": 30.0,
+  "pgd_decay": 0.9995,
+  "pgd_ell_schedule_mode": "exponential",
+  "pgd_ell_decay_alpha": 1.0,
+  "pgd_gamma": 300.0,
+  "pgd_step_growth_exponent": 0.01,
+  "natural_sgd_gamma": 100.0,
+  "natural_damping": 0.001,
+  "scale_eps": 1e-06,
+  "kernel_diag_max_pairs": 20000,
+  "print_kernel_diagnostics": true,
+  "pgd_step_size_mode": "adaptive_decay",
+  "run_natural_sgd": true,
+  "run_adaptive_sgd": false,
+  "run_fixed_pgd": false,
+  "checkpoint_steps": [
+    10,
+    1000,
+    3000,
+    12000
+  ],
+  "uses_theta0_by_seed": true,
+  "result_file": "results/lv/lotka_volterra_results_60_60_15c.npz"
+}

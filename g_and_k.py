@@ -2,7 +2,7 @@ import numpy as np
 import time
 from functools import partial
 from pathlib import Path
-from results_io import save_metadata_sidecar
+from results_io import save_selected_metadata_sidecar
 
 import jax
 jax.config.update("jax_enable_x64", True)
@@ -118,10 +118,21 @@ def lhs_rhs_values_gk(x_model, y_target, ell_t, ell_inf):
     return lhs, rhs
 
 
-def make_adaptive_ell_schedule(n_steps, ell0, ell_min, decay):
-    """Geometric decay schedule clipped below by ell_min."""
+def make_adaptive_ell_schedule(
+    n_steps,
+    ell0,
+    ell_min,
+    decay,
+    schedule="exponential",
+    alpha=1.0,
+):
+    """Adaptive lengthscale schedule clipped below by ell_min."""
     ts = np.arange(n_steps, dtype=np.float64)
-    return np.maximum(ell_min, ell0 * (decay ** ts))
+    if schedule == "exponential":
+        return np.maximum(ell_min, ell0 * (decay ** ts))
+    if schedule == "polynomial":
+        return np.maximum(ell_min, ell0 / ((ts + 1.0) ** alpha))
+    raise ValueError("schedule must be 'exponential' or 'polynomial'")
 
 
 def make_pgd_step_size_schedule(n_steps, mode, gamma0, growth_exponent=0.99):
@@ -132,6 +143,19 @@ def make_pgd_step_size_schedule(n_steps, mode, gamma0, growth_exponent=0.99):
     if mode == "adaptive_decay":
         return gamma0 / ((ts + 1.0) ** growth_exponent)
     raise ValueError("mode must be 'fixed' or 'adaptive_decay'")
+
+
+def _normalize_checkpoint_steps(checkpoint_steps, n_steps):
+    if checkpoint_steps is None:
+        return None
+    normalized = []
+    for step in checkpoint_steps:
+        step_int = int(step)
+        if 1 <= step_int <= int(n_steps):
+            normalized.append(step_int)
+    if not normalized:
+        return np.empty((0,), dtype=np.int32)
+    return np.asarray(sorted(set(normalized)), dtype=np.int32)
 
 
 # ============================================================
@@ -291,6 +315,7 @@ def run_baseline_sgd(
     n_eval_model=2000,
     print_every=20,
     history_every=1,
+    checkpoint_steps=None,
     method_label="SGD",
 ):
     key = jax.random.PRNGKey(seed + 1000)
@@ -303,8 +328,15 @@ def run_baseline_sgd(
     grad_theta_history = []
     theta_delta_history = []
     jac_col_norm_history = []
+    checkpoint_iterations = []
+    checkpoint_elapsed_seconds = []
+    checkpoint_eval_losses = []
+    checkpoint_thetas = []
     last_train_loss = None
     last_eval_loss = None
+    checkpoint_steps = _normalize_checkpoint_steps(checkpoint_steps, n_steps_sgd)
+    checkpoint_step_set = set([] if checkpoint_steps is None else checkpoint_steps.tolist())
+    start_time = time.perf_counter()
 
     for t in range(n_steps_sgd):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
@@ -347,6 +379,12 @@ def run_baseline_sgd(
             grad_theta_history.append(np.array(grad_theta, dtype=np.float64))
             theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
             jac_col_norm_history.append(np.array(jac_col_norms, dtype=np.float64))
+            iteration = t + 1
+            if iteration in checkpoint_step_set:
+                checkpoint_iterations.append(iteration)
+                checkpoint_elapsed_seconds.append(time.perf_counter() - start_time)
+                checkpoint_eval_losses.append(float(eval_loss))
+                checkpoint_thetas.append(np.array(theta, dtype=np.float64))
 
         if (t % print_every == 0) or (t == n_steps_sgd - 1):
             if last_eval_loss is None:
@@ -377,6 +415,10 @@ def run_baseline_sgd(
         "grad_theta_history": np.array(grad_theta_history, dtype=np.float64),
         "theta_delta_history": np.array(theta_delta_history, dtype=np.float64),
         "jac_col_norm_history": np.array(jac_col_norm_history, dtype=np.float64),
+        "checkpoint_iterations": np.asarray(checkpoint_iterations, dtype=np.int32),
+        "checkpoint_elapsed_seconds": np.asarray(checkpoint_elapsed_seconds, dtype=np.float64),
+        "checkpoint_eval_losses": np.asarray(checkpoint_eval_losses, dtype=np.float64),
+        "checkpoint_thetas": np.asarray(checkpoint_thetas, dtype=np.float64),
     }
 
 
@@ -394,6 +436,7 @@ def run_natural_sgd(
     n_eval_model=2000,
     print_every=20,
     history_every=1,
+    checkpoint_steps=None,
 ):
     key = jax.random.PRNGKey(seed + 1500)
     phi = theta_to_phi(theta0)
@@ -406,8 +449,15 @@ def run_natural_sgd(
     direction_history = []
     theta_delta_history = []
     jac_col_norm_history = []
+    checkpoint_iterations = []
+    checkpoint_elapsed_seconds = []
+    checkpoint_eval_losses = []
+    checkpoint_thetas = []
     last_train_loss = None
     last_eval_loss = None
+    checkpoint_steps = _normalize_checkpoint_steps(checkpoint_steps, n_steps_sgd)
+    checkpoint_step_set = set([] if checkpoint_steps is None else checkpoint_steps.tolist())
+    start_time = time.perf_counter()
 
     for t in range(n_steps_sgd):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
@@ -451,6 +501,12 @@ def run_natural_sgd(
             direction_history.append(np.array(direction, dtype=np.float64))
             theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
             jac_col_norm_history.append(np.array(jac_col_norms, dtype=np.float64))
+            iteration = t + 1
+            if iteration in checkpoint_step_set:
+                checkpoint_iterations.append(iteration)
+                checkpoint_elapsed_seconds.append(time.perf_counter() - start_time)
+                checkpoint_eval_losses.append(float(eval_loss))
+                checkpoint_thetas.append(np.array(theta, dtype=np.float64))
 
         if (t % print_every == 0) or (t == n_steps_sgd - 1):
             if last_eval_loss is None:
@@ -481,6 +537,10 @@ def run_natural_sgd(
         "direction_history": np.array(direction_history, dtype=np.float64),
         "theta_delta_history": np.array(theta_delta_history, dtype=np.float64),
         "jac_col_norm_history": np.array(jac_col_norm_history, dtype=np.float64),
+        "checkpoint_iterations": np.asarray(checkpoint_iterations, dtype=np.int32),
+        "checkpoint_elapsed_seconds": np.asarray(checkpoint_elapsed_seconds, dtype=np.float64),
+        "checkpoint_eval_losses": np.asarray(checkpoint_eval_losses, dtype=np.float64),
+        "checkpoint_thetas": np.asarray(checkpoint_thetas, dtype=np.float64),
     }
 
 
@@ -497,12 +557,15 @@ def run_adaptive_pgd(
     ell_min,
     decay,
     ell_eval,
+    ell_schedule_mode="exponential",
+    ell_decay_alpha=1.0,
     ell_schedule=None,
     pgd_step_size_mode="fixed",
     pgd_step_growth_exponent=0.99,
     n_eval_model=2000,
     print_every=20,
     history_every=1,
+    checkpoint_steps=None,
     method_label="PGD",
 ):
     key = jax.random.PRNGKey(seed + 2000)
@@ -517,11 +580,22 @@ def run_adaptive_pgd(
     jac_col_norm_history = []
     lhs_history = []
     rhs_history = []
+    checkpoint_iterations = []
+    checkpoint_elapsed_seconds = []
+    checkpoint_eval_losses = []
+    checkpoint_thetas = []
     last_train_loss = None
     last_eval_loss = None
 
     if ell_schedule is None:
-        ell_schedule = make_adaptive_ell_schedule(n_steps_pgd, ell0, ell_min, decay)
+        ell_schedule = make_adaptive_ell_schedule(
+            n_steps_pgd,
+            ell0,
+            ell_min,
+            decay,
+            schedule=ell_schedule_mode,
+            alpha=ell_decay_alpha,
+        )
     else:
         ell_schedule = np.asarray(ell_schedule, dtype=np.float64)
         if ell_schedule.shape[0] != n_steps_pgd:
@@ -532,6 +606,9 @@ def run_adaptive_pgd(
         gamma0=gamma_pgd0,
         growth_exponent=pgd_step_growth_exponent,
     )
+    checkpoint_steps = _normalize_checkpoint_steps(checkpoint_steps, n_steps_pgd)
+    checkpoint_step_set = set([] if checkpoint_steps is None else checkpoint_steps.tolist())
+    start_time = time.perf_counter()
 
     for t in range(n_steps_pgd):
         key, key_batch, key_model, key_eval = jax.random.split(key, 4)
@@ -579,30 +656,38 @@ def run_adaptive_pgd(
             direction_history.append(np.array(direction, dtype=np.float64))
             theta_delta_history.append(np.array(theta_delta, dtype=np.float64))
             jac_col_norm_history.append(np.array(jac_col_norms, dtype=np.float64))
-            # Optional diagnostics, disabled for fairer runtime comparisons:
-            _, x_diag = sample_gk(key_eval, theta, n_model)
-            lhs, rhs = lhs_rhs_values_gk(
-                x_model=x_diag,
-                y_target=y_obs_full,
-                ell_t=ell_t,
-                ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
-            )
-            lhs_history.append(float(lhs))
-            rhs_history.append(float(rhs))
-            # lhs_history.append(np.nan)
-            # rhs_history.append(np.nan)
+            # # Optional diagnostics, disabled for fairer runtime comparisons:
+            # _, x_diag = sample_gk(key_eval, theta, n_model)
+            # lhs, rhs = lhs_rhs_values_gk(
+            #     x_model=x_diag,
+            #     y_target=y_obs_full,
+            #     ell_t=ell_t,
+            #     ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
+            # )
+            # lhs_history.append(float(lhs))
+            # rhs_history.append(float(rhs))
+
+            iteration = t + 1
+            if iteration in checkpoint_step_set:
+                checkpoint_iterations.append(iteration)
+                checkpoint_elapsed_seconds.append(time.perf_counter() - start_time)
+                checkpoint_eval_losses.append(float(eval_loss))
+                checkpoint_thetas.append(np.array(theta, dtype=np.float64))
+
+            lhs_history.append(np.nan)
+            rhs_history.append(np.nan)
 
         if (t % print_every == 0) or (t == n_steps_pgd - 1):
-            # Optional diagnostics, disabled for fairer runtime comparisons:
-            theta = phi_to_theta(phi)
-            _, x_diag = sample_gk(key_eval, theta, n_model)
-            lhs, rhs = lhs_rhs_values_gk(
-                x_model=x_diag,
-                y_target=y_obs_full,
-                ell_t=ell_t,
-                ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
-            )
-            ratio = float(lhs) / float(rhs) if float(rhs) != 0.0 else np.inf
+            # # Optional diagnostics, disabled for fairer runtime comparisons:
+            # theta = phi_to_theta(phi)
+            # _, x_diag = sample_gk(key_eval, theta, n_model)
+            # lhs, rhs = lhs_rhs_values_gk(
+            #     x_model=x_diag,
+            #     y_target=y_obs_full,
+            #     ell_t=ell_t,
+            #     ell_inf=jnp.asarray(ell_min, dtype=jnp.float64),
+            # )
+            # ratio = float(lhs) / float(rhs) if float(rhs) != 0.0 else np.inf
             if last_eval_loss is None:
                 theta = phi_to_theta(phi)
                 last_eval_loss = eval_loss_full(
@@ -618,8 +703,8 @@ def run_adaptive_pgd(
                 f"gamma={float(gamma_t):.6f} | lambda={float(lambda_t):.6f} | "
                 f"train_loss={float(train_loss):.8f} | "
                 f"eval_loss={float(last_eval_loss):.8f}"
-                f" | lhs={float(lhs):.6e} | rhs={float(rhs):.6e} | "
-                f"lhs/rhs={ratio:.6e}"
+            #     f" | lhs={float(lhs):.6e} | rhs={float(rhs):.6e} | "
+            #     f"lhs/rhs={ratio:.6e}"
             )
 
     return {
@@ -635,6 +720,10 @@ def run_adaptive_pgd(
         "jac_col_norm_history": np.array(jac_col_norm_history, dtype=np.float64),
         "lhs_history": np.array(lhs_history, dtype=np.float64),
         "rhs_history": np.array(rhs_history, dtype=np.float64),
+        "checkpoint_iterations": np.asarray(checkpoint_iterations, dtype=np.int32),
+        "checkpoint_elapsed_seconds": np.asarray(checkpoint_elapsed_seconds, dtype=np.float64),
+        "checkpoint_eval_losses": np.asarray(checkpoint_eval_losses, dtype=np.float64),
+        "checkpoint_thetas": np.asarray(checkpoint_thetas, dtype=np.float64),
     }
 
 
@@ -665,7 +754,10 @@ def run_baseline_and_adaptive(
     ell0=20.0,
     ell_min=2.0,
     decay=0.997,
+    ell_schedule_mode="exponential",
+    ell_decay_alpha=1.0,
     history_every=1,
+    checkpoint_steps=None,
     run_baseline=True,
     run_natural=True,
     run_adaptive_sgd=False,
@@ -677,7 +769,14 @@ def run_baseline_and_adaptive(
     natural_damping = lambda_scale if natural_damping is None else natural_damping
 
     result = {}
-    adaptive_ell_schedule_sgd = make_adaptive_ell_schedule(n_steps_sgd, ell0, ell_min, decay)
+    adaptive_ell_schedule_sgd = make_adaptive_ell_schedule(
+        n_steps_sgd,
+        ell0,
+        ell_min,
+        decay,
+        schedule=ell_schedule_mode,
+        alpha=ell_decay_alpha,
+    )
     fixed_ell_schedule_pgd = np.full((n_steps_pgd,), ell_min, dtype=np.float64)
 
     if run_baseline:
@@ -696,6 +795,7 @@ def run_baseline_and_adaptive(
             n_eval_model=n_eval_model,
             print_every=20,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
         )
         baseline_elapsed_seconds = time.perf_counter() - baseline_start
         result.update(
@@ -713,6 +813,15 @@ def run_baseline_and_adaptive(
                 "baseline_elapsed_seconds": np.asarray(baseline_elapsed_seconds, dtype=np.float64),
             }
         )
+        if baseline_res["checkpoint_iterations"].size > 0:
+            result.update(
+                {
+                    "baseline_checkpoint_iterations": baseline_res["checkpoint_iterations"],
+                    "baseline_checkpoint_elapsed_seconds": baseline_res["checkpoint_elapsed_seconds"],
+                    "baseline_checkpoint_eval_losses": baseline_res["checkpoint_eval_losses"],
+                    "baseline_checkpoint_thetas": baseline_res["checkpoint_thetas"],
+                }
+            )
 
     if run_adaptive_sgd:
         print("\n=== Plain SGD with adaptive lengthscale schedule ===")
@@ -731,6 +840,7 @@ def run_baseline_and_adaptive(
             n_eval_model=n_eval_model,
             print_every=20,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
             method_label="SGD-adaptive-ell",
         )
         adaptive_sgd_elapsed_seconds = time.perf_counter() - adaptive_sgd_start
@@ -767,6 +877,7 @@ def run_baseline_and_adaptive(
             n_eval_model=n_eval_model,
             print_every=20,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
         )
         natural_elapsed_seconds = time.perf_counter() - natural_start
         result.update(
@@ -785,6 +896,15 @@ def run_baseline_and_adaptive(
                 "natural_elapsed_seconds": np.asarray(natural_elapsed_seconds, dtype=np.float64),
             }
         )
+        if natural_res["checkpoint_iterations"].size > 0:
+            result.update(
+                {
+                    "natural_checkpoint_iterations": natural_res["checkpoint_iterations"],
+                    "natural_checkpoint_elapsed_seconds": natural_res["checkpoint_elapsed_seconds"],
+                    "natural_checkpoint_eval_losses": natural_res["checkpoint_eval_losses"],
+                    "natural_checkpoint_thetas": natural_res["checkpoint_thetas"],
+                }
+            )
 
     print("\n=== Adaptive PGD (shrinking lengthscale with local preconditioning) ===")
     adaptive_start = time.perf_counter()
@@ -802,10 +922,13 @@ def run_baseline_and_adaptive(
         ell0=ell0,
         ell_min=ell_min,
         decay=decay,
+        ell_schedule_mode=ell_schedule_mode,
+        ell_decay_alpha=ell_decay_alpha,
         ell_eval=ell_min,
         n_eval_model=n_eval_model,
         print_every=20,
         history_every=history_every,
+        checkpoint_steps=checkpoint_steps,
     )
     adaptive_elapsed_seconds = time.perf_counter() - adaptive_start
     result.update(
@@ -825,6 +948,15 @@ def run_baseline_and_adaptive(
             "adaptive_elapsed_seconds": np.asarray(adaptive_elapsed_seconds, dtype=np.float64),
         }
     )
+    if adaptive_res["checkpoint_iterations"].size > 0:
+        result.update(
+            {
+                "adaptive_checkpoint_iterations": adaptive_res["checkpoint_iterations"],
+                "adaptive_checkpoint_elapsed_seconds": adaptive_res["checkpoint_elapsed_seconds"],
+                "adaptive_checkpoint_eval_losses": adaptive_res["checkpoint_eval_losses"],
+                "adaptive_checkpoint_thetas": adaptive_res["checkpoint_thetas"],
+            }
+        )
 
     if run_fixed_pgd:
         print("\n=== PGD with fixed lengthscale ell_infty ===")
@@ -843,11 +975,14 @@ def run_baseline_and_adaptive(
             ell0=ell0,
             ell_min=ell_min,
             decay=decay,
+            ell_schedule_mode=ell_schedule_mode,
+            ell_decay_alpha=ell_decay_alpha,
             ell_eval=ell_min,
             ell_schedule=fixed_ell_schedule_pgd,
             n_eval_model=n_eval_model,
             print_every=20,
             history_every=history_every,
+            checkpoint_steps=checkpoint_steps,
             method_label="PGD-fixed-ell",
         )
         fixed_pgd_elapsed_seconds = time.perf_counter() - fixed_pgd_start
@@ -877,11 +1012,62 @@ def run_baseline_and_adaptive(
 # ============================================================
 # This section repeats the one-seed experiment, stacks all histories, saves
 # per-seed arrays, and also saves means/stds for quick plotting.
+HYPERPARAMETER_METADATA_KEYS = {
+    "seeds",
+    "n_model",
+    "theta_true",
+    "theta0",
+    "theta0_per_seed",
+    "n_obs_full",
+    "target_batch_size",
+    "n_steps_sgd",
+    "n_steps_pgd",
+    "gamma_sgd",
+    "gamma_natural_sgd",
+    "gamma_pgd0",
+    "pgd_step_size_mode",
+    "pgd_step_growth_exponent",
+    "lambda_scale",
+    "natural_damping",
+    "n_eval_model",
+    "ell_fixed",
+    "ell0",
+    "ell_min",
+    "ell_eval",
+    "decay",
+    "ell_schedule_mode",
+    "ell_decay_alpha",
+    "history_every",
+    "checkpoint_steps",
+    "run_baseline",
+    "run_natural",
+    "run_adaptive_sgd",
+    "run_fixed_pgd",
+    "uses_theta0_by_seed",
+    "sweep_name",
+    "sweep_param",
+    "sweep_values",
+    "grid_name",
+    "n_obs_full_values",
+    "n_model_values",
+    "tie_target_batch_to_n_obs",
+    "lengthscale_param",
+    "lengthscale_values",
+    "secondary_lengthscale_param",
+    "secondary_lengthscale_values",
+    "lambda_scales",
+}
+
+
 def save_results(results, output_path):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(output_path, **results)
-    save_metadata_sidecar(results, output_path)
+    save_selected_metadata_sidecar(
+        results,
+        output_path,
+        allowed_keys=HYPERPARAMETER_METADATA_KEYS,
+    )
 
 
 def _format_theta_for_filename(theta):
@@ -953,7 +1139,10 @@ def run_grid_over_n_model(
     ell0=20.0,
     ell_min=2.0,
     decay=0.997,
+    ell_schedule_mode="exponential",
+    ell_decay_alpha=1.0,
     history_every=1,
+    checkpoint_steps=None,
     run_baseline=True,
     run_natural=True,
     run_adaptive_sgd=False,
@@ -1020,7 +1209,10 @@ def run_grid_over_n_model(
                     ell0=ell0,
                     ell_min=ell_min,
                     decay=decay,
+                    ell_schedule_mode=ell_schedule_mode,
+                    ell_decay_alpha=ell_decay_alpha,
                     history_every=history_every,
+                    checkpoint_steps=checkpoint_steps,
                     run_baseline=run_baseline,
                     run_natural=run_natural,
                     run_adaptive_sgd=run_adaptive_sgd,
@@ -1069,6 +1261,8 @@ def run_grid_over_n_model(
             "ell_min": np.array(ell_min, dtype=np.float64),
             "ell_eval": np.array(ell_min, dtype=np.float64),
             "decay": np.array(decay, dtype=np.float64),
+            "ell_schedule_mode": np.asarray(ell_schedule_mode),
+            "ell_decay_alpha": np.asarray(ell_decay_alpha, dtype=np.float64),
             "history_every": np.array(history_every, dtype=np.int32),
             "adaptive_train_losses": adaptive_train,
             "adaptive_eval_losses": adaptive_eval,
@@ -1109,6 +1303,45 @@ def run_grid_over_n_model(
             "run_fixed_pgd": np.array(run_fixed_pgd, dtype=np.bool_),
             "uses_theta0_by_seed": np.array(theta0_by_seed is not None, dtype=np.bool_),
         }
+        if "adaptive_checkpoint_iterations" in per_seed[0]:
+            adaptive_checkpoint_iterations = np.asarray(
+                per_seed[0]["adaptive_checkpoint_iterations"], dtype=np.int32
+            )
+            adaptive_checkpoint_elapsed_seconds = _stack(
+                [res["adaptive_checkpoint_elapsed_seconds"] for res in per_seed]
+            )
+            adaptive_checkpoint_eval_losses = _stack(
+                [res["adaptive_checkpoint_eval_losses"] for res in per_seed]
+            )
+            adaptive_checkpoint_thetas = _stack(
+                [res["adaptive_checkpoint_thetas"] for res in per_seed]
+            )
+            results.update(
+                {
+                    "adaptive_checkpoint_iterations": adaptive_checkpoint_iterations,
+                    "adaptive_checkpoint_elapsed_seconds": adaptive_checkpoint_elapsed_seconds,
+                    "adaptive_checkpoint_elapsed_mean": np.mean(
+                        adaptive_checkpoint_elapsed_seconds, axis=0
+                    ),
+                    "adaptive_checkpoint_elapsed_std": np.std(
+                        adaptive_checkpoint_elapsed_seconds, axis=0
+                    ),
+                    "adaptive_checkpoint_eval_losses": adaptive_checkpoint_eval_losses,
+                    "adaptive_checkpoint_eval_mean": np.mean(
+                        adaptive_checkpoint_eval_losses, axis=0
+                    ),
+                    "adaptive_checkpoint_eval_std": np.std(
+                        adaptive_checkpoint_eval_losses, axis=0
+                    ),
+                    "adaptive_checkpoint_thetas": adaptive_checkpoint_thetas,
+                    "adaptive_checkpoint_theta_mean": np.mean(
+                        adaptive_checkpoint_thetas, axis=0
+                    ),
+                    "adaptive_checkpoint_theta_std": np.std(
+                        adaptive_checkpoint_thetas, axis=0
+                    ),
+                }
+            )
 
         if run_baseline:
             baseline_train = _stack([res["baseline_train_loss_final"] for res in per_seed])
@@ -1154,6 +1387,45 @@ def run_grid_over_n_model(
                     "baseline_jac_col_norm_history_mean": np.mean(baseline_jac_col_norm_histories, axis=0),
                 }
             )
+            if "baseline_checkpoint_iterations" in per_seed[0]:
+                baseline_checkpoint_iterations = np.asarray(
+                    per_seed[0]["baseline_checkpoint_iterations"], dtype=np.int32
+                )
+                baseline_checkpoint_elapsed_seconds = _stack(
+                    [res["baseline_checkpoint_elapsed_seconds"] for res in per_seed]
+                )
+                baseline_checkpoint_eval_losses = _stack(
+                    [res["baseline_checkpoint_eval_losses"] for res in per_seed]
+                )
+                baseline_checkpoint_thetas = _stack(
+                    [res["baseline_checkpoint_thetas"] for res in per_seed]
+                )
+                results.update(
+                    {
+                        "baseline_checkpoint_iterations": baseline_checkpoint_iterations,
+                        "baseline_checkpoint_elapsed_seconds": baseline_checkpoint_elapsed_seconds,
+                        "baseline_checkpoint_elapsed_mean": np.mean(
+                            baseline_checkpoint_elapsed_seconds, axis=0
+                        ),
+                        "baseline_checkpoint_elapsed_std": np.std(
+                            baseline_checkpoint_elapsed_seconds, axis=0
+                        ),
+                        "baseline_checkpoint_eval_losses": baseline_checkpoint_eval_losses,
+                        "baseline_checkpoint_eval_mean": np.mean(
+                            baseline_checkpoint_eval_losses, axis=0
+                        ),
+                        "baseline_checkpoint_eval_std": np.std(
+                            baseline_checkpoint_eval_losses, axis=0
+                        ),
+                        "baseline_checkpoint_thetas": baseline_checkpoint_thetas,
+                        "baseline_checkpoint_theta_mean": np.mean(
+                            baseline_checkpoint_thetas, axis=0
+                        ),
+                        "baseline_checkpoint_theta_std": np.std(
+                            baseline_checkpoint_thetas, axis=0
+                        ),
+                    }
+                )
 
         if run_natural:
             natural_train = _stack([res["natural_train_loss_final"] for res in per_seed])
@@ -1202,6 +1474,45 @@ def run_grid_over_n_model(
                     "natural_jac_col_norm_history_mean": np.mean(natural_jac_col_norm_histories, axis=0),
                 }
             )
+            if "natural_checkpoint_iterations" in per_seed[0]:
+                natural_checkpoint_iterations = np.asarray(
+                    per_seed[0]["natural_checkpoint_iterations"], dtype=np.int32
+                )
+                natural_checkpoint_elapsed_seconds = _stack(
+                    [res["natural_checkpoint_elapsed_seconds"] for res in per_seed]
+                )
+                natural_checkpoint_eval_losses = _stack(
+                    [res["natural_checkpoint_eval_losses"] for res in per_seed]
+                )
+                natural_checkpoint_thetas = _stack(
+                    [res["natural_checkpoint_thetas"] for res in per_seed]
+                )
+                results.update(
+                    {
+                        "natural_checkpoint_iterations": natural_checkpoint_iterations,
+                        "natural_checkpoint_elapsed_seconds": natural_checkpoint_elapsed_seconds,
+                        "natural_checkpoint_elapsed_mean": np.mean(
+                            natural_checkpoint_elapsed_seconds, axis=0
+                        ),
+                        "natural_checkpoint_elapsed_std": np.std(
+                            natural_checkpoint_elapsed_seconds, axis=0
+                        ),
+                        "natural_checkpoint_eval_losses": natural_checkpoint_eval_losses,
+                        "natural_checkpoint_eval_mean": np.mean(
+                            natural_checkpoint_eval_losses, axis=0
+                        ),
+                        "natural_checkpoint_eval_std": np.std(
+                            natural_checkpoint_eval_losses, axis=0
+                        ),
+                        "natural_checkpoint_thetas": natural_checkpoint_thetas,
+                        "natural_checkpoint_theta_mean": np.mean(
+                            natural_checkpoint_thetas, axis=0
+                        ),
+                        "natural_checkpoint_theta_std": np.std(
+                            natural_checkpoint_thetas, axis=0
+                        ),
+                    }
+                )
 
         if run_adaptive_sgd:
             adaptive_sgd_train = _stack([res["adaptive_sgd_train_loss_final"] for res in per_seed])
@@ -1359,7 +1670,10 @@ def run_for_n_model(
     ell0=20.0,
     ell_min=2.0,
     decay=0.997,
+    ell_schedule_mode="exponential",
+    ell_decay_alpha=1.0,
     history_every=1,
+    checkpoint_steps=None,
     run_baseline=True,
     run_natural=True,
     run_adaptive_sgd=False,
@@ -1388,7 +1702,10 @@ def run_for_n_model(
         ell0=ell0,
         ell_min=ell_min,
         decay=decay,
+        ell_schedule_mode=ell_schedule_mode,
+        ell_decay_alpha=ell_decay_alpha,
         history_every=history_every,
+        checkpoint_steps=checkpoint_steps,
         run_baseline=run_baseline,
         run_natural=run_natural,
         run_adaptive_sgd=run_adaptive_sgd,
@@ -1776,24 +2093,26 @@ def run_lengthscale_regularization_grid_for_n_model(
 # ============================================================
 # Change theta0 and hyperparameters here when running this script directly.
 if __name__ == "__main__":
-    experiment_mode = "single_run"
+    experiment_mode = "decay_ablation"
+    ell_schedule_mode = "exponential"
 
-    # single_run_theta0_by_seed = np.array(
-    #     [
-    #         [3.5, 2.0, 0.6, -0.8],
-    #         [3.4, 1.9, 0.7, -0.75],
-    #         [2.0, 2.1, 0.5, -0.85],
-    #         [2.0, 2.0, 1.3, -0.6],
-    #         [3.7, 1.8, 0.6, -0.9],
-    #     ],
-    #     dtype=np.float64,
-    # )
+    single_run_theta0_by_seed = np.array(
+        [
+            [3.5, 2.0, 0.6, -0.8],
+            [3.4, 1.9, 0.7, -0.75],
+            [2.0, 2.1, 0.5, -0.85],
+            [2.0, 2.0, 1.3, -0.6],
+            [3.7, 1.8, 0.6, -0.9],
+        ],
+        dtype=np.float64,
+    )
+
     single_run_kwargs = dict(
         theta_true=np.array([3.0, 1.0, 1.0, -np.log(2.0)], dtype=np.float64),
-        theta0=np.tile(np.array([2.0, 2.0, 1.3, -0.6], dtype=np.float64), (10, 1)),
+        theta0_by_seed=np.tile(np.array([3.5, 2.0, 0.6, -0.8], dtype=np.float64), (10, 1)), #np.tile(np.array([2.0, 2.0, 1.3, -0.6], dtype=np.float64), (10, 1))
         n_obs_full=1000,
         target_batch_size=600,
-        n_steps_sgd=1,
+        n_steps_sgd=3000,
         n_steps_pgd=3000,
         gamma_sgd=0.1,
         gamma_natural_sgd=0.1,
@@ -1807,6 +2126,9 @@ if __name__ == "__main__":
         ell0=10.0,
         ell_min=2.0,
         decay=0.99,
+        ell_schedule_mode=ell_schedule_mode,
+        ell_decay_alpha=0.2,
+        checkpoint_steps=(100, 300, 1000, 3000),
         run_adaptive_sgd=False,
         run_fixed_pgd=False,
     )
@@ -1828,14 +2150,14 @@ if __name__ == "__main__":
             dtype=np.float64,
         ),
         n_obs_full=1000,
-        target_batch_size=200,
+        target_batch_size=600,
         n_steps_sgd=1,
         n_steps_pgd=3000,
         gamma_sgd=0.1,
         gamma_natural_sgd=0.1,
         gamma_pgd0=0.1,
         pgd_step_size_mode="adaptive_decay",
-        pgd_step_growth_exponent=0.99,
+        pgd_step_growth_exponent=0.01,
         lambda_scale=1e-3,
         natural_damping=1e-3,
         n_eval_model=2000,
@@ -1843,6 +2165,8 @@ if __name__ == "__main__":
         ell0=10.0,
         ell_min=2.0,
         decay=0.99,
+        ell_schedule_mode=ell_schedule_mode,
+        ell_decay_alpha=0.2,
         run_adaptive_sgd=False,
         run_fixed_pgd=False,
     )
@@ -1858,7 +2182,7 @@ if __name__ == "__main__":
         result = run_for_n_model(
             n_model=600,
             seeds=range(10),
-            output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL/results/gnk/adaptive_step",
+            output_dir="/Users/sophiakang/Documents/GitHub/MDF_AL/results/gnk",
             **single_run_kwargs,
         )
 

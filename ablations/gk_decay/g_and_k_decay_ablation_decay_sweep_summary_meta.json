@@ -8,13 +8,6 @@
     0.95,
     0.99
   ],
-  "output_paths": [
-    "ablations/gk_decay/g_and_k_decay_ablation_decay_sweep_0p5/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_decay/g_and_k_decay_ablation_decay_sweep_0p8/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_decay/g_and_k_decay_ablation_decay_sweep_0p9/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_decay/g_and_k_decay_ablation_decay_sweep_0p95/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz",
-    "ablations/gk_decay/g_and_k_decay_ablation_decay_sweep_0p99/g_n_k_fixed600_theta0_2p000_2p000_1p500_m0p300.npz"
-  ],
   "n_model": 600,
   "seeds": [
     0,
@@ -27,13 +20,6 @@
     7,
     8,
     9
-  ],
-  "adaptive_eval_means": [
-    3.123414470065951e-05,
-    3.12305839759692e-05,
-    3.122808179861907e-05,
-    3.122398744208035e-05,
-    3.138399696965976e-05
   ],
   "result_file": "ablations/gk_decay/g_and_k_decay_ablation_decay_sweep_summary.npz"
 }

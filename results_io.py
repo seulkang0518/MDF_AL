@@ -54,3 +54,18 @@ def save_metadata_sidecar(results, output_path):
     with sidecar_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
     return sidecar_path
+
+
+def save_selected_metadata_sidecar(results, output_path, allowed_keys):
+    sidecar_path = metadata_sidecar_path(output_path)
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    allowed_key_set = set(allowed_keys)
+    payload = {
+        key: _to_jsonable(value)
+        for key, value in results.items()
+        if key in allowed_key_set
+    }
+    payload["result_file"] = str(Path(output_path))
+    with sidecar_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+    return sidecar_path
