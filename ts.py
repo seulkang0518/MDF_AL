@@ -295,7 +295,7 @@ class FastPGDEstimator:
                 self.last_fit_time = time.perf_counter() - start
                 self.last_final_mmd = float(final_mmd)
                 self.last_theta = theta_hat
-            print(f"pgd fit #{self.fit_calls}: mmd={float(final_mmd):.6f}", flush=True)
+                print(f"pgd fit #{self.fit_calls}: mmd={float(final_mmd):.6f}", flush=True)
 
         return theta_hat
 
@@ -462,8 +462,8 @@ def parse_args():
     parser.add_argument("--n-opt", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=0.0) #0.2
     parser.add_argument("--ridge", type=float, default=1e-3)
-    parser.add_argument("--ell-initial", type=float, default=1000.0)
-    parser.add_argument("--ell-final", type=float, default=80.0)
+    parser.add_argument("--ell-initial", type=float, default=2000.0) #5000 #2000
+    parser.add_argument("--ell-final", type=float, default=120.0) #250 #120
     parser.add_argument("--ell-decay", type=float, default=0.96)
     parser.add_argument("--simulator-n", type=int, default=None) 
     parser.add_argument("--verbose", action="store_true")
